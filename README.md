@@ -1,5 +1,9 @@
 # SMILES Parser
 
+Simplified Molecular Input Line Entry System if a system for representing chemical structures (see `GRAMMAR.md`).
+
+Testing Parser: (https://doc.gdb.tools/smilesDrawer/sd/example/index_light.html)[https://doc.gdb.tools/smilesDrawer/sd/example/index_light.html]
+
 Current Support:
 
 ## Atoms
