@@ -1,10 +1,10 @@
 import { organicSubset } from "../data-vars";
 import { BondType } from "../types/Bonds";
-import { IAtomCount, IElementToIonMap } from "../types/Environment";
+import { createGenerateSmilesStackItemObject, createParseOptionsObject, IAtomCount, IElementToIonMap, IGenerateSmilesStackItem, IParseOptions } from "../types/Environment";
 import { IGroupMap } from "../types/Group";
-import { arrFromBack, extractBetweenMatching, extractElement, extractInteger, isBondChar, parseChargeString, parseInorganicString, _chargeRegex1, _chargeRegex2, _regexNum } from "../utils";
+import { arrFromBack, assembleEmpiricalFormula, assembleMolecularFormula, extractBetweenMatching, extractElement, extractInteger, getBondNumber, isBondChar, parseChargeString, parseInorganicString, _chargeRegex1, _chargeRegex2, _regexNum } from "../utils";
 import { AdvError } from "./Error";
-import { Group } from "./Group";
+import { Group, resetGroupID } from "./Group";
 
 export class Environment {
   private _canvas: HTMLCanvasElement;
@@ -12,6 +12,7 @@ export class Environment {
 
   private _smilesString: string = '';
   private _groups: IGroupMap;
+  public parseOptions: IParseOptions = createParseOptionsObject();
 
   public constructor(canvas: HTMLCanvasElement) {
     this._canvas = canvas;
@@ -26,10 +27,27 @@ export class Environment {
    * @throws Error
    */
   public parse() {
-    this._groups = [];
+    this._groups = {};
+    resetGroupID();
     try {
       const mainChain: Group[] = [];
       this._tryParse(this._smilesString, mainChain);
+      // Add implicit hydrogens?
+      if (this.parseOptions.addImplicitHydrogens) this._addImplcitHydrogens();
+      // Check bond count
+      if (this.parseOptions.checkBondCount) {
+        try {
+          this.checkBondCounts();
+        } catch (e) {
+          if (e instanceof AdvError) {
+            let col = e.columnNumber;
+            e.insertMessage(`Error in SMILES '${this._smilesString}'`);
+            e.setUnderlineString(this._smilesString);
+            e.columnNumber = col;
+          }
+          throw e;
+        }
+      }
     } catch (e) {
       // Turn AdvError into Error - transfer fancy message
       if (e instanceof AdvError) throw new Error(e.getErrorMessage());
@@ -39,7 +57,7 @@ export class Environment {
 
   private _tryParse(smiles: string, groups: Group[], parent?: Group, chainDepth = 0, indexOffset = 0) {
     try {
-      return this._parse(smiles, groups, parent);
+      return this._parse(smiles, groups, parent, chainDepth);
     } catch (e) {
       if (e instanceof AdvError) {
         let colNo = indexOffset + e.columnNumber;
@@ -51,6 +69,7 @@ export class Environment {
     }
   }
 
+  /** NOT designed to be called directly */
   private _parse(smiles: string, groups: Group[], parent?: Group, chainDepth = 0) {
     let currentGroup: Group = undefined, currentBond: BondType, currentBondPos = NaN;
     for (let pos = 0; pos < smiles.length;) {
@@ -76,9 +95,12 @@ export class Environment {
 
         // Apply to last atom, if exists. Is charge already applied?
         if (groups.length > 0) {
-          let group = arrFromBack(groups, 1);
+          let group = arrFromBack(groups, 1), length = extraction.extracted.length + 2;
+          // Cumulative charge?
+          if (group.charge !== 0 && !this.parseOptions.cumulativeCharge) throw new AdvError(`Syntax Error: unexpected charge clause`, "{" + extraction.extracted + "}").setColumnNumber(pos);
           group.charge += charge;
-          pos += extraction.extracted.length + 2; // pos += "{<extracted>}".length
+          pos += length;
+          group.smilesStringLength += length;
           continue;
         }
       }
@@ -99,7 +121,7 @@ export class Environment {
             if (info.elements.length === 0) {
               throw new AdvError(`Syntax Error: expected element`, extraction.extracted || "]").setColumnNumber(pos + 1);
             } else {
-              if (currentGroup === undefined) currentGroup = new Group();
+              if (currentGroup === undefined) currentGroup = new Group({ chainDepth }).setSMILESposInfo(pos, extraction.extracted.length + 2);
               currentGroup.elements.push(...info.elements);
               currentGroup.charge = info.charge;
 
@@ -154,7 +176,7 @@ export class Environment {
               throw new AdvError(`Syntax Error: expected organic element[${Object.keys(organicSubset).join(',')}], got '${extracted}'`, extracted).setColumnNumber(pos);
             } else {
               // Add element to group information
-              if (currentGroup === undefined) currentGroup = new Group();
+              if (currentGroup === undefined) currentGroup = new Group({ chainDepth }).setSMILESposInfo(pos, extracted.length);
               currentGroup.elements.push(extracted);
               groups.push(currentGroup);
               currentGroup = undefined;
@@ -202,6 +224,85 @@ export class Environment {
 
     // Add to global collection
     groups.forEach(g => this._groups[g.ID] = g);
+  }
+
+  /** Add implicit hydrogens e.g. "C" -> "C([H])([H])([H])([H])" */
+  private _addImplcitHydrogens() {
+    for (const gid in this._groups) {
+      if (this._groups.hasOwnProperty(gid)) {
+        const group = this._groups[gid];
+        if (group.inOrganicSubset()) {
+          const bonds = this._getBondCount(group);
+          if (group.charge === 0) {
+            // Find target bonds
+            let targetBonds: number = NaN;
+            for (let n of organicSubset[group.elements[0]]) {
+              if (n >= bonds) {
+                targetBonds = n
+                break;
+              }
+            }
+            // Add hydrogens (if got targetBonds)
+            if (!isNaN(targetBonds)) {
+              let hCount = targetBonds - bonds;
+              for (let h = 0; h < hCount; h++) {
+                let hydrogen = new Group({ elements: ['H'], chainDepth: group.chainDepth + 1 });
+                hydrogen.isImplicit = true;
+                group.addBond('-', hydrogen);
+                this._groups[hydrogen.ID] = hydrogen;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Check each atom - has it too many/few bonds?
+   * Return `true` if valid, else throws AdvError
+  */
+  public checkBondCounts() {
+    try {
+      for (const gid in this._groups) {
+        if (this._groups.hasOwnProperty(gid)) {
+          const group = this._groups[gid], bonds = this._getBondCount(group);
+          // If charge is zero, and not in organic subset, ignore
+          if (group.charge === 0) {
+            if (group.inOrganicSubset()) {
+              let bondNumbers = organicSubset[group.elements[0]], ok = false;
+              for (let n of bondNumbers) {
+                if (n === bonds) {
+                  ok = true;
+                  break;
+                }
+              }
+              if (!ok) throw new AdvError(`Bond Error: invalid bond count for organic atom '${group.elements[0]}': ${bonds}. Expected ${bondNumbers.join(' or ')}.`, group.elements[0]).setColumnNumber(group.smilesStringPosition);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      if (e instanceof AdvError) {
+        let col = e.columnNumber;
+        e.setUnderlineString(this._smilesString);
+        e.columnNumber = col;
+      }
+      throw e;
+    }
+  }
+
+  /** How many bonds does said group have? */
+  private _getBondCount(group: Group): number {
+    let count = group.getBondCount();
+    for (const gid in this._groups) {
+      if (this._groups.hasOwnProperty(gid)) {
+        this._groups[gid].bonds.forEach(bond => {
+          if (bond.dest === group.ID) count += getBondNumber(bond.bond);
+        });
+      }
+    }
+    return count;
   }
 
   /**
@@ -309,6 +410,79 @@ export class Environment {
     }
     return atoms;
   }
+
+  // #region Generate
+  /** Generate SMILES string from parsed data.
+   * @param showImplcities - Render implicit groups? (if .isImplicit === true)
+  */
+  public generateSMILES(showImplicits = false): string {
+    /** Assemble and return SMILES string from a StackItem */
+    const assembleSMILES = (item: IGenerateSmilesStackItem): string => {
+      item.smilesChildren = item.smilesChildren.filter(x => x.length > 0);
+      let lastChild = item.smilesChildren.pop();
+      return item.smiles + item.smilesChildren.map(x => `(${x})`).join('') + (lastChild || '');
+    };
+
+    let smiles = '';
+    const stack: IGenerateSmilesStackItem[] = [];
+    stack.push(createGenerateSmilesStackItemObject(+Object.keys(this._groups)[0])); // Add root group
+
+    while (stack.length !== 0) {
+      const i = stack.length - 1;
+      if (stack[i].handled) {
+        // Handled; remove from array
+        if (stack[i].parent !== undefined) {
+          let j = stack[i].parent;
+          // stack[j].smiles += "(" + stack[i].smiles + ")";
+          stack[j].smilesChildren.push(assembleSMILES(stack[i]));
+        } else {
+          // smiles = stack[i].smiles + smiles;
+          smiles = assembleSMILES(stack[i]) + smiles;
+        }
+        stack.splice(i, 1);
+      } else {
+        const group = this._groups[stack[i].group];
+
+        // Shall we render this?
+        const render = !group.isImplicit || (group.isImplicit && showImplicits);
+        if (render) {
+          stack[i].smiles += stack[i].bond && stack[i].bond !== '-' ? stack[i].bond : '';
+          stack[i].smiles += group.toString();
+        }
+        stack[i].handled = true;
+
+        // Bonds (add in reverse as topmost is processed first)
+        for (let j = group.bonds.length - 1; j >= 0; j--) {
+          const obj = group.bonds[j];
+          stack.push(createGenerateSmilesStackItemObject(obj.dest, i, obj.bond));
+        }
+      }
+    }
+    return smiles;
+  }
+
+  /**
+   * Generate molecular formula
+   * e.g. "C2H4O2"
+   * @param detailed - If true, will keep [NH4+] and not split it up, keep charges etc...
+   * @param html - Return formula as HTML?
+   * @param useHillSystem - Use hill system to order formula in conventional way?
+   */
+  public generateMolecularFormula(detailed?: boolean, html = false, useHillSystem = true): string {
+    let count = this.countAtoms(detailed, useHillSystem);
+    return assembleMolecularFormula(count, html);
+  }
+  /**
+   * Generate empirical formula
+   * e.g. "C2H4O2" -> "CH2O"
+   * @param html - Return formula as HTML?
+   * @param useHillSystem - Use hill system to order formula in conventional way?
+   */
+  public generateEmpiricalFormula(html = false, useHillSystem = true): string {
+    let count = this.countAtoms(true, useHillSystem);
+    return assembleEmpiricalFormula(count, html);
+  }
+  //#endregion
 }
 
 export default Environment;

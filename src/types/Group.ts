@@ -6,9 +6,10 @@ export interface IGroupInformation {
   charge?: number;
   ringDigits?: number[];
   bonds?: IBond[];
+  chainDepth?: number;
 }
 
-export const createGroupInfoObject = (): IGroupInformation => ({ elements: [], charge: 0, ringDigits: [], bonds: [] });
+export const createGroupInfoObject = (): IGroupInformation => ({ elements: [], charge: 0, ringDigits: [], bonds: [], chainDepth: 0 });
 
 export interface IGroupMap {
   [id: number]: Group;

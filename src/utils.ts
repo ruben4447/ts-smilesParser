@@ -1,4 +1,5 @@
 import { symbolsByLength } from "./data-vars";
+import { BondType } from "./types/Bonds";
 import { IAtomCount } from "./types/Environment";
 import { IExtractBetweenInformation, IParseInorganicString } from "./types/utils";
 
@@ -119,6 +120,14 @@ export function extractElement(string: string): string | null {
 
 /** Is the given string a bond? */
 export const isBondChar = (chr: string) => chr == "-" || chr == "=" || chr == "#";
+
+/** Get bond number */
+export function getBondNumber(bond: BondType): number {
+  if (bond === '-') return 1;
+  if (bond === '=') return 2;
+  if (bond === '#') return 3;
+  return NaN;
+}
 
 export const arrFromBack = <T>(array: T[], index = 1): T => array[array.length - index];
 

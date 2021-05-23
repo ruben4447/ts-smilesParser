@@ -37,9 +37,9 @@ function _main() {
 
   env = new Environment(canvas);
   $globals.env = env;
-  // parseSmiles("C(C(=O)O[H])CC");
-  // parseSmiles("O{-}{-}");
-  parseSmiles("CCCC(=O)O[H]");
+  env.parseOptions.checkBondCount = false;
+  parseSmiles("C(C(=O)O[H])CC");
+  parseSmiles("CC(=O)O[H]");
 }
 
 function _error(e: Error) {
@@ -68,15 +68,11 @@ function parseSmiles(smiles: string) {
   }
 
   // SMILES
-  elOutput.innerHTML += `<b>SMILES</b>: ${env.getSMILESstring()}`;
+  elOutput.innerHTML += `<b>SMILES</b>: ${env.getSMILESstring()} ; ${env.generateSMILES()}`;
 
   // Atoms
-  let atomCount = env.countAtoms(inputSplitFormula.checked, $globals.useHillSystem);
-  let formula = utils.assembleMolecularFormula(atomCount, true);
-  elOutput.innerHTML += ` | <b>Molecular Formula</b>: ${formula}`;
-
-  let empiricalFormula = utils.assembleEmpiricalFormula(env.countAtoms(true, $globals.useHillSystem), true);
-  elOutput.innerHTML += ` | <b>Empirical Formula</b>: ${empiricalFormula}`;
+  elOutput.innerHTML += ` | <b>Molecular Formula</b>: ${env.generateMolecularFormula(inputSplitFormula.checked, true, $globals.useHillSystem)}`;
+  elOutput.innerHTML += ` | <b>Empirical Formula</b>: ${env.generateEmpiricalFormula(true, $globals.useHillSystem)}`;
 }
 
 window.addEventListener('load', _main);
