@@ -1,6 +1,25 @@
-import { AdvError } from "./classes/Error";
 import { symbolsByLength } from "./data-vars";
 import { IExtractBetweenInformation, IParseInorganicString } from "./types/utils";
+
+export const getTextMetrics = (ctx: CanvasRenderingContext2D, text: string) => {
+  const metrics = ctx.measureText(text);
+  return {
+    width: metrics.width,
+    height: metrics.fontBoundingBoxDescent + metrics.fontBoundingBoxAscent,
+  };
+};
+
+/** Render multiline text to a canvas. Return final y position. */
+export function canvasWriteText(ctx: CanvasRenderingContext2D, text: string, startX = 0, startY = 0, linePaddingMult = 1): number {
+  const lines = text.split(/\r\n|\r|\n/g);
+  let x = startX, y = startY;
+  for (const line of lines) {
+    const metrics = getTextMetrics(ctx, line);
+    ctx.fillText(line, x, y);
+    y += metrics.height * linePaddingMult;
+  }
+  return y;
+}
 
 /**
  * @param string - charge strinng SYNTAX '[-+][0-9]+' or '[+-]+'
