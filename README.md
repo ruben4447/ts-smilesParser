@@ -22,3 +22,10 @@ May be stacked (e.g. `N{-}{-}`) or stacked with inorganic atoms (e.g. `[N-]{-}`)
 Supports explicit bonds `-`, `=` and `#`
 
 Impllicit bonds `-` are automatically inserted between atoms
+
+## Chains
+Enclosed by `(...)`
+
+The atom/group before the `(` is the parent atom of the chain. Multiple chains may be stacked e.g. `C(Cl)(Cl)=O`
+
+Chains may start with a bond - this is what the chain is bonded to the patent atom by e.g. `C(=O)O[H]`

@@ -42,6 +42,7 @@ export class Group {
     }
   }
 
+  /** String representation of whole atom */
   public toString() {
     let string = "#" + this.ID + ":"
     string += this.inOrganicSubset() ? this.elements[0] : "[" + this.elements.join('') + "]";

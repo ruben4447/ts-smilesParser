@@ -18,5 +18,5 @@ export const organicSubset = {
   Cl: [1],
   Br: [1],
   I: [1],
-  "*": [Infinity],
+  "*": [NaN],
 };

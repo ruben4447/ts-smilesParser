@@ -1,4 +1,5 @@
 import { symbolsByLength } from "./data-vars";
+import { IAtomCount } from "./types/Environment";
 import { IExtractBetweenInformation, IParseInorganicString } from "./types/utils";
 
 export const getTextMetrics = (ctx: CanvasRenderingContext2D, text: string) => {
@@ -130,7 +131,7 @@ export function extractInteger(str: string): number {
   }
   return parseInt(numStr);
 }
-const _regexNum = /[0-9]/;
+export const _regexNum = /[0-9]/;
 
 /**
  * Parse inorganic string e.g. 'NH4+' (stuff inside [...])
@@ -174,4 +175,67 @@ export function parseInorganicString(str: string): IParseInorganicString {
 }
 
 /** Charge number to string */
-export const chargeToString = (charge: number): string => (charge < 0 ? '-' : '+') + Math.abs(charge).toString();
+export const chargeToString = (charge: number): string => (charge < 0 ? '-' : '+') + (charge === 1 || charge === -1 ? '' : Math.abs(charge).toString());
+
+/**
+ * Transform AtomCount map into formula string
+ * @param html - use <sub/> and <sup/> elements to encase numbers?
+ */
+export function assembleMolecularFormula(atoms: IAtomCount[], html = false): string {
+  let str = '';
+  for (const group of atoms) {
+    // Only one atom?
+    let firstAtom = extractElement(group.atom), atom = firstAtom === group.atom ? group.atom : '(' + group.atom + ')';
+    str += atom;
+    if (group.count !== 1) str += html ? `<sub>${group.count}</sub>` : group.count;
+    if (!isNaN(group.charge) && group.charge !== 0) str += html ? `<sup>${chargeToString(group.charge)}</sup>` : `{${chargeToString(group.charge)}}`;
+  }
+  return str;
+}
+
+/**
+ * Transform AtomCount map into empirical formula string
+ * @param html - use <sub/> and <sup/> elements to encase numbers?
+ */
+export function assembleEmpiricalFormula(atoms: IAtomCount[], html = false): string {
+  // Assemblt atom counts (without charges)
+  const counts: { [atom: string]: number } = {};
+  atoms.forEach(group => {
+    if (counts[group.atom] === undefined) counts[group.atom] = 0;
+    counts[group.atom] += group.count;
+  });
+  // Divide by GCD
+  let gcd = gcdOfManyNumbers(Object.values(counts));
+  let str = '';
+  for (let atom in counts) {
+    if (counts.hasOwnProperty(atom)) {
+      counts[atom] /= gcd;
+      str += atom;
+      if (counts[atom] !== 1) str += html ? `<sub>${counts[atom]}</sub>` : counts[atom];
+    }
+  }
+  return str;
+}
+
+/** Find Greatest Common Divisor or 2 numbers */
+export function gcdOfTwoNumbers(a: number, b: number): number {
+  a = Math.abs(a);
+  b = Math.abs(b);
+  while (b) {
+    let t = b;
+    b = a % t;
+    a = t;
+  }
+  return a;
+}
+
+/** Find greatest common divisor of a group of numbers */
+export function gcdOfManyNumbers(numbers: number[]): number {
+  let len = numbers.length, a: number, b: number;
+  a = numbers[0];
+  for (let i = 1; i < len; i++) {
+    b = numbers[i];
+    a = gcdOfTwoNumbers(a, b);
+  }
+  return a;
+}

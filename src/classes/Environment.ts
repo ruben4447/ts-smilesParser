@@ -1,7 +1,8 @@
 import { organicSubset } from "../data-vars";
 import { BondType } from "../types/Bonds";
+import { IAtomCount, IElementToIonMap } from "../types/Environment";
 import { IGroupMap } from "../types/Group";
-import { arrFromBack, extractBetweenMatching, extractElement, isBondChar, parseChargeString, parseInorganicString, _chargeRegex1, _chargeRegex2 } from "../utils";
+import { arrFromBack, extractBetweenMatching, extractElement, extractInteger, isBondChar, parseChargeString, parseInorganicString, _chargeRegex1, _chargeRegex2, _regexNum } from "../utils";
 import { AdvError } from "./Error";
 import { Group } from "./Group";
 
@@ -202,4 +203,112 @@ export class Environment {
     // Add to global collection
     groups.forEach(g => this._groups[g.ID] = g);
   }
+
+  /**
+   * Count each atom in parsed data
+   * Order the AtomCount object via the Hill system
+   * - Hill system => carbons, hydrogens, then other elements in alphabetical order
+   */
+  public countAtoms(splitGroups = false, hillSystemOrder = true): IAtomCount[] {
+    let atoms: IAtomCount[] = [], elementsPos: string[] = [];
+    for (const id in this._groups) {
+      if (this._groups.hasOwnProperty(id)) {
+        const group = this._groups[id];
+        if (splitGroups) {
+          for (const element of group.elements) {
+            let chargeStr = element + '{' + group.charge + '}', i = elementsPos.indexOf(chargeStr);
+            if (atoms[element] === undefined) {
+              atoms.push({ atom: element, charge: NaN, count: 0 }); // If splitting groups up, vannot associate charge
+              elementsPos.push(chargeStr);
+              i = elementsPos.length - 1;
+            }
+            atoms[i].count++;
+          }
+        } else {
+          let str = group.elements.join(''), chargeStr = str + '{' + group.charge + '}', i = elementsPos.indexOf(chargeStr);
+          if (atoms[i] === undefined) {
+            atoms.push({ atom: str, charge: group.charge, count: 0 });
+            elementsPos.push(chargeStr);
+            i = elementsPos.length - 1;
+          }
+          atoms[i].count++;
+        }
+      }
+    }
+    if (splitGroups) {
+      // Deconstruct numbered atoms e.g. "H2": 1 --> "H": 2
+      let newAtoms: IAtomCount[] = [], elementsPos: string[] = [];
+      for (let i = 0; i < atoms.length; i++) {
+        const group = atoms[i];
+        if (_regexNum.test(group.atom)) {
+          let atom = extractElement(group.atom), count = extractInteger(group.atom.substr(atom.length)), str = atom + "{" + group.charge + "}", i = elementsPos.indexOf(str);
+          if (i === -1) {
+            newAtoms.push({ atom, count, charge: NaN });
+            elementsPos.push(str);
+          } else {
+            newAtoms[i].count += count;
+          }
+        } else {
+          let str = group.atom + "{" + group.charge + "}", i = elementsPos.indexOf(str);
+          if (i === -1) {
+            newAtoms.push(group);
+            elementsPos.push(str);
+          } else {
+            newAtoms[i].count += group.count;
+          }
+        }
+      }
+      atoms = newAtoms;
+    }
+    if (hillSystemOrder) {
+      let newAtoms: IAtomCount[] = [], elementPos: string[] = [];
+      // Carbons come first
+      let carbons: IAtomCount[] = [];
+      for (let i = atoms.length - 1; i >= 0; i--) {
+        if (atoms[i].atom === 'C') {
+          carbons.push(atoms[i]);
+          atoms.splice(i, 1);
+        }
+      }
+      carbons.sort((a, b) => a.charge - b.charge);
+      newAtoms.push(...carbons);
+      // Hydrogens come second
+      let hydrogens: IAtomCount[] = [];
+      for (let i = atoms.length - 1; i >= 0; i--) {
+        if (atoms[i].atom === 'J') {
+          hydrogens.push(atoms[i]);
+          atoms.splice(i, 1);
+        }
+      }
+      hydrogens.sort((a, b) => a.charge - b.charge);
+      newAtoms.push(...hydrogens);
+      // Sort rest by alphabetical order
+      let elements: IElementToIonMap = {}, elementKeys: string[] = [];
+      // Extract element ions
+      for (let group of atoms) {
+        if (elements[group.atom] === undefined) {
+          elements[group.atom] = [];
+          elementKeys.push(group.atom);
+        }
+        elements[group.atom].push(group);
+      }
+      // Order ions by charge
+      for (let element in elements) {
+        if (elements.hasOwnProperty(element)) {
+          elements[element].sort((a, b) => a.charge - b.charge);
+        }
+      }
+      // Order elements alphabeticalls
+      elementKeys.sort();
+      elementKeys.forEach(e => {
+        elements[e].forEach(ion => {
+          newAtoms.push(ion);
+        });
+      });
+      return newAtoms;
+    }
+    return atoms;
+  }
 }
+
+export default Environment;
