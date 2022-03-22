@@ -15,6 +15,7 @@ export interface IParseOptions {
   enableInorganicAtoms: boolean; // [...]
   enableChains: boolean; // (...)
   enableRings: boolean;
+  enableSeperatedStructures: boolean;
   cumulativeCharge?: boolean; // Allow O{-}{-} ?
   checkBondCount?: boolean;
   addImplicitHydrogens?: boolean; // Add implicit Hydrogens e.g. "C" -> "C([H])([H])([H])([H])"
@@ -25,6 +26,7 @@ export const createParseOptionsObject = (): IParseOptions => ({
   enableInorganicAtoms: true,
   enableChains: true,
   enableRings: false,
+  enableSeperatedStructures: true,
   cumulativeCharge: true,
   checkBondCount: true,
   addImplicitHydrogens: true,

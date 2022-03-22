@@ -76,8 +76,18 @@ export class SMILES {
 
   /** NOT designed to be called directly */
   private _parse(smiles: string, groups: Group[], parent?: Group, chainDepth = 0, indexOffset = 0) {
-    let currentGroup: Group = undefined, currentBond: BondType, currentBondPos = NaN;
+    let currentGroup: Group = undefined, currentBond: BondType, currentBondPos = NaN, dontBondNext = false;
     for (let pos = 0; pos < smiles.length;) {
+      // #region Disconnected Structures
+      if (this.parseOptions.enableSeperatedStructures && smiles[pos] === "." && chainDepth === 0) {
+        // Unecesarry
+        if (dontBondNext) throw new AdvError(`Syntax Error: expected SMILES, got seperator '.'`, '.').setColumnNumber(pos);
+        dontBondNext = true;
+        pos++;
+        continue;
+      }
+      //#endregion
+
       // #region Explicit Bond
       if (isBondChar(smiles[pos])) {
         currentBond = smiles[pos] as BondType;
@@ -230,32 +240,37 @@ export class SMILES {
       //#endregion
 
       // #region Bonding
-      if (currentBond) {
-        // Link last two items?
-        if (groups.length >= 2) {
-          let one = arrFromBack(groups, 1), two = arrFromBack(groups, 2);
-          let ok = two.addBond(currentBond, one, indexOffset + currentBondPos);
-          if (!ok) throw new AdvError(`Bond Error: attempted to create explicit bond between this (${one.toString()}) and last atom (${two.toString()})`, currentBond).setColumnNumber(currentBondPos);
-        } else if (groups.length === 1 && parent instanceof Group) {
-          // Link to chain parent
-          let ok = parent.addBond(currentBond, groups[0], indexOffset + currentBondPos);
-          if (!ok) throw new AdvError(`Bond Error: attempted to create explicit bond between this (${groups[0].toString()}) and chain parent atom '${parent.toString()}'`, currentBond).setColumnNumber(currentBondPos);
-        } else {
-          throw new AdvError(`Syntax Error: unexpected bond '${currentBond}'`, currentBond).setColumnNumber(currentBondPos);
-        }
-        currentBond = undefined;
+      if (dontBondNext && this.parseOptions.enableSeperatedStructures) {
+        if (currentBond) throw new AdvError(`Bond Error: attempted to create bond between seperatured structures`, currentBond).setColumnNumber(currentBondPos);
+        dontBondNext = false;
       } else {
-        // With default bond
-        const defaultBond: BondType = '-';
-        if (groups.length >= 2) {
-          // Add default, single bond to last atom
-          let one = arrFromBack(groups, 1), two = arrFromBack(groups, 2);
-          let ok = two.addBond(defaultBond, one, indexOffset + currentBondPos);
-          if (!ok) throw new AdvError(`Bond Error: attempted to create implicit bond between this (${one.toString()}) and last atom (${two.toString()})`, smiles[pos]).setColumnNumber(pos);
-        } else if (groups.length === 1 && parent instanceof Group) {
-          // Link to chain parent
-          let ok = parent.addBond(defaultBond, groups[0], indexOffset + currentBondPos);
-          if (!ok) throw new AdvError(`Bond Error: attempted to create implicit bond between this (${groups[0].toString()}) and chain parent atom '${parent.toString()}'`, smiles[pos]).setColumnNumber(pos);
+        if (currentBond) {
+          // Link last two items?
+          if (groups.length >= 2) {
+            let one = arrFromBack(groups, 1), two = arrFromBack(groups, 2);
+            let ok = two.addBond(currentBond, one, indexOffset + currentBondPos);
+            if (!ok) throw new AdvError(`Bond Error: attempted to create explicit bond between this (${one.toString()}) and last atom (${two.toString()})`, currentBond).setColumnNumber(currentBondPos);
+          } else if (groups.length === 1 && parent instanceof Group) {
+            // Link to chain parent
+            let ok = parent.addBond(currentBond, groups[0], indexOffset + currentBondPos);
+            if (!ok) throw new AdvError(`Bond Error: attempted to create explicit bond between this (${groups[0].toString()}) and chain parent atom '${parent.toString()}'`, currentBond).setColumnNumber(currentBondPos);
+          } else {
+            throw new AdvError(`Syntax Error: unexpected bond '${currentBond}'`, currentBond).setColumnNumber(currentBondPos);
+          }
+          currentBond = undefined;
+        } else {
+          // With default bond
+          const defaultBond: BondType = '-';
+          if (groups.length >= 2) {
+            // Add default, single bond to last atom
+            let one = arrFromBack(groups, 1), two = arrFromBack(groups, 2);
+            let ok = two.addBond(defaultBond, one, indexOffset + currentBondPos);
+            if (!ok) throw new AdvError(`Bond Error: attempted to create implicit bond between this (${one.toString()}) and last atom (${two.toString()})`, smiles[pos]).setColumnNumber(pos);
+          } else if (groups.length === 1 && parent instanceof Group) {
+            // Link to chain parent
+            let ok = parent.addBond(defaultBond, groups[0], indexOffset + currentBondPos);
+            if (!ok) throw new AdvError(`Bond Error: attempted to create implicit bond between this (${groups[0].toString()}) and chain parent atom '${parent.toString()}'`, smiles[pos]).setColumnNumber(pos);
+          }
         }
       }
       //#endregion

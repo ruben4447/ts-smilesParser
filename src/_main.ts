@@ -30,7 +30,7 @@ function _main() {
   p.insertAdjacentHTML("beforeend", " | Parse Option: ");
   selectBoolOption = document.createElement("select");
   p.appendChild(selectBoolOption);
-  ["enableInorganicAtoms", "enableChargeClauses", "enableChains", "enableRings", "cumulativeCharge", "checkBondCount", "addImplicitHydrogens"].forEach(op => {
+  ["enableInorganicAtoms", "enableChargeClauses", "enableChains", "enableRings", "enableSeperatedStructures", "cumulativeCharge", "checkBondCount", "addImplicitHydrogens"].forEach(op => {
     selectBoolOption.insertAdjacentHTML("beforeend", `<option value='${op}'>${op}</option>`);
   });
   p.insertAdjacentHTML("beforeend", " <span>=</span> ");
@@ -61,7 +61,7 @@ function _main() {
   env.parseOptions.checkBondCount = false;
   env.parseOptions.enableRings = true;
   inputBoolOption.checked = env.parseOptions[selectBoolOption.value];
-  parseSmiles("C(=O)O");
+  parseSmiles("C(=O)O.Br");
   // parseSmiles("CBr");
   // parseSmiles("C1C(=O)CC1");
   // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
