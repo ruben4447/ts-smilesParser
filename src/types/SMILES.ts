@@ -1,9 +1,12 @@
 import type Ring from "../classes/Rings";
 import { BondType } from "./Bonds";
 
-export interface IAtomCount {
+export interface IAtom {
   atom: string;
   charge: number;
+}
+
+export interface IAtomCount extends IAtom {
   count: number;
 }
 
@@ -53,12 +56,6 @@ export const createGenerateSmilesStackItemObject = (group: number, parent: numbe
   smilesChildren: [],
 });
 
-export interface IGenerateCondensedFormulaItem {
-  group: number; // Current group -> ID for this._groups.
-  handled: boolean;
-  parent: number; // What were we last bonded to? ID for stack
-  children: string[]; // Array of element children
-}
 
 /** Option interface for .countAtoms */
 export interface ICountAtoms {

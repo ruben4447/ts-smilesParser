@@ -1,6 +1,6 @@
 import { symbolsByLength } from "./data-vars";
 import { BondType } from "./types/Bonds";
-import { IAtomCount } from "./types/Environment";
+import { IAtomCount } from "./types/SMILES";
 import { IExtractBetweenInformation, IParseDigitString, IParseInorganicString } from "./types/utils";
 
 export const getTextMetrics = (ctx: CanvasRenderingContext2D, text: string) => {

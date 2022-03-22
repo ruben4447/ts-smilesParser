@@ -1,6 +1,6 @@
-import { organicSubset } from "../data-vars";
+import { masses, organicSubset, symbols } from "../data-vars";
 import { BondType, IBond } from "../types/Bonds";
-import { IAtomCount } from "../types/Environment";
+import { IAtomCount } from "../types/SMILES";
 import { IGroupInformation } from "../types/Group";
 import { chargeToString, getBondNumber, numstr } from "../utils";
 
@@ -77,14 +77,23 @@ export class Group {
     }
   }
 
+  /** Do two groups match? */
+  public matchGroup(group: Group) {
+    if (this.charge !== group.charge) return false;
+    for (const [el, count] of this.elements) {
+      if (!group.elements.has(el) || group.elements.get(el) !== count) return false;
+    }
+    return true;
+  }
+
   /** Get bond count - how mnay SINGLE bond equivalents we have (e.g. '=' would be +2) */
   public getBondCount(): number {
-    let count = 0;
-    for (let bond of this.bonds) {
-      let n = getBondNumber(bond.bond);
-      count += n;
-    }
-    return count;
+    return this.bonds.reduce((s, b) => s + getBondNumber(b.bond), 0);
+  }
+
+  /** Calculate Mr for a group */
+  public calculateMr() {
+    return Array.from(this.elements).reduce((Mr, [atom, count]) => Mr + (masses[symbols.indexOf(atom)] ?? 0) * count, 0);
   }
 
   /** Count atoms in group */

@@ -1,13 +1,14 @@
 import { organicSubset } from "../data-vars";
 import { BondType } from "../types/Bonds";
-import { createGenerateSmilesStackItemObject, createParseOptionsObject, IAtomCount, ICountAtoms, IElementToIonMap, IGenerateCondensedFormulaItem, IGenerateSmilesStackItem, IParseOptions, IRingMap } from "../types/Environment";
+import { createGenerateSmilesStackItemObject, createParseOptionsObject, IGenerateSmilesStackItem, IParseOptions, IRingMap } from "../types/SMILES";
 import { IGroupMap } from "../types/Group";
-import { arrFromBack, assembleEmpiricalFormula, assembleMolecularFormula, extractBetweenMatching, extractDuplicates, extractElement, extractInteger, getBondNumber, isBondChar, numstr, parseChargeString, parseDigitString, parseInorganicString, _chargeRegex1, _chargeRegex2, _regexNum } from "../utils";
+import { arrFromBack, extractBetweenMatching, extractDuplicates, extractElement, getBondNumber, isBondChar, parseChargeString, parseDigitString, parseInorganicString, _chargeRegex1, _chargeRegex2, _regexNum } from "../utils";
 import { AdvError } from "./Error";
 import { Group, resetGroupID } from "./Group";
+import { Molecule } from "./Molecule";
 import Ring from "./Rings";
 
-export class Environment {
+export class SMILES {
   private _canvas: HTMLCanvasElement;
   private _ctx: CanvasRenderingContext2D;
 
@@ -365,120 +366,92 @@ export class Environment {
     }
   }
 
-  /**
-   * Count each atom in parsed data
-   * Order the AtomCount object via the Hill system
-   * - Hill system => carbons, hydrogens, then other elements in alphabetical order
-   * - Ignore charge => ignore charge on atoms?
-   */
-  public countAtoms(opts: ICountAtoms = {}): IAtomCount[] {
-    opts.splitGroups ??= false;
-    opts.hillSystemOrder ??= true;
-    opts.ignoreCharge ??= false;
+  /** Return array of molecules */
+  public getMolecules(): Molecule[] {
+    const moleculeGroups: Group[][] = [];
+    const stack: number[] = Object.keys(this._groups).map(k => +k).reverse(); // Stack of IDs to this._group to scan (or NaN if done)
+    const bondedGroups = new Set<number>(); // Set of group IDs which have been bonded
+    const doneGroups = new Set<number>(); // Set of group IDs which have been done
 
-    let atoms: IAtomCount[] = [], elementsPos: string[] = [];
-    for (const id in this._groups) {
-      if (this._groups.hasOwnProperty(id)) {
-        const group = this._groups[id], groupCharge = opts.ignoreCharge ? 0 : group.charge;
-        if (opts.splitGroups) {
-          group.elements.forEach((count, element) => {
-            let chargeStr = element + '{' + groupCharge + '}', i = elementsPos.indexOf(chargeStr);
-            if (atoms[element] === undefined) {
-              atoms.push({ atom: element, charge: NaN, count: 0 }); // If splitting groups up, cannot associate charge
-              elementsPos.push(chargeStr);
-              i = elementsPos.length - 1;
-            }
-            atoms[i].count += count;
-          });
+    while (stack.length !== 0) {
+      const i = stack.length - 1, group = this._groups[stack[i]];
+      if (doneGroups.has(group.ID)) {
+        stack.splice(i, 1);
+      } else {
+        let isNew = !bondedGroups.has(group.ID);
+        let arr: Group[];
+        if (isNew) {
+          arr = [group];
+          moleculeGroups.push(arr);
         } else {
-          let str = group.getElementString(true), chargeStr = str + '{' + groupCharge + '}', i = elementsPos.indexOf(chargeStr);
-          if (atoms[i] === undefined) {
-            atoms.push({ atom: str, charge: groupCharge, count: 0 });
-            elementsPos.push(chargeStr);
-            i = elementsPos.length - 1;
-          }
-          atoms[i].count++;
+          arr = arrFromBack(moleculeGroups);
         }
+
+        for (let j = group.bonds.length - 1; j >= 0; j--) {
+          const bond = group.bonds[j];
+          arr.push(this._groups[bond.dest]);
+          // doneGroups.add(bond.dest);
+          stack.push(bond.dest);
+          bondedGroups.add(bond.dest);
+        }
+
+        doneGroups.add(group.ID);
+        bondedGroups.add(group.ID);
       }
     }
-    if (opts.splitGroups) {
-      // Deconstruct numbered atoms e.g. "H2": 1 --> "H": 2
-      let newAtoms: IAtomCount[] = [], elementsPos: string[] = [];
-      for (let i = 0; i < atoms.length; i++) {
-        const group = atoms[i];
-        if (_regexNum.test(group.atom)) {
-          let atom = extractElement(group.atom), count = extractInteger(group.atom.substr(atom.length)), str = atom + "{" + group.charge + "}", i = elementsPos.indexOf(str);
-          if (i === -1) {
-            newAtoms.push({ atom, count, charge: NaN });
-            elementsPos.push(str);
-          } else {
-            newAtoms[i].count += count;
-          }
-        } else {
-          let str = group.atom + "{" + group.charge + "}", i = elementsPos.indexOf(str);
-          if (i === -1) {
-            newAtoms.push(group);
-            elementsPos.push(str);
-          } else {
-            newAtoms[i].count += group.count;
-          }
-        }
-      }
-      atoms = newAtoms;
-    }
-    if (opts.hillSystemOrder) {
-      let newAtoms: IAtomCount[] = [], elementPos: string[] = [];
-      // Carbons come first
-      let carbons: IAtomCount[] = [];
-      for (let i = atoms.length - 1; i >= 0; i--) {
-        if (atoms[i].atom === 'C') {
-          carbons.push(atoms[i]);
-          atoms.splice(i, 1);
-        }
-      }
-      carbons.sort((a, b) => a.charge - b.charge);
-      newAtoms.push(...carbons);
-      // Hydrogens come second
-      let hydrogens: IAtomCount[] = [];
-      for (let i = atoms.length - 1; i >= 0; i--) {
-        if (atoms[i].atom === 'H') {
-          hydrogens.push(atoms[i]);
-          atoms.splice(i, 1);
-        }
-      }
-      hydrogens.sort((a, b) => a.charge - b.charge);
-      newAtoms.push(...hydrogens);
-      // Sort rest by alphabetical order
-      let elements: IElementToIonMap = {}, elementKeys: string[] = [];
-      // Extract element ions
-      for (let group of atoms) {
-        if (elements[group.atom] === undefined) {
-          elements[group.atom] = [];
-          elementKeys.push(group.atom);
-        }
-        elements[group.atom].push(group);
-      }
-      // Order ions by charge
-      for (let element in elements) {
-        if (elements.hasOwnProperty(element)) {
-          elements[element].sort((a, b) => a.charge - b.charge);
-        }
-      }
-      // Order elements alphabeticalls
-      elementKeys.sort();
-      elementKeys.forEach(e => {
-        elements[e].forEach(ion => {
-          newAtoms.push(ion);
-        });
-      });
-      return newAtoms;
-    }
-    return atoms;
+
+    return moleculeGroups.map(groups => new Molecule(groups));
   }
 
-  // #region Generate
+  // /** Search for a functional group */
+  // public matchSegments(groups: IGroupMap) {
+  //   const checkStack: number[] = Object.keys(this._groups).map(k => +k).reverse(); // Groups to check
+  //   const csToMatchIndex: number[] = Array.from<number>({ length: checkStack.length }).fill(-1); // Map IDs of this._groups to section we are macthing from in groups (or -1 if none)
+  //   let matchingCount = 0;
+  //   let stackLength = checkStack.length; // Record length of stack before started checking molecule
+
+  //   /**  If groups match, go throuh each bond and check if it matches a bond from the group in segments. If so, and matches atom it is connected to, push to record. Return is any continuations were made. */
+  //   const exploreForward = (gid: number, fgid: number) => {
+  //     let anyMatch = false;
+  //     if (groups[fgid].matchGroup(this._groups[gid])) {
+  //       for (const bond of this._groups[gid].bonds) {
+  //         for (const fbond of groups[fgid].bonds) {
+  //           if (bond.bond === fbond.bond && this._groups[bond.dest].matchGroup(groups[fbond.dest])) {
+  //             checkStack.push(bond.dest);
+  //             csToMatchIndex.push(fbond.dest);
+  //             anyMatch = true;
+  //           }
+  //         }
+  //       }
+  //     }
+  //     return anyMatch;
+  //   };
+
+  //   while (checkStack.length > 0) {
+  //     const gid = checkStack.pop(), fgid = csToMatchIndex.pop();
+
+  //     if (fgid !== -1) {
+  //       let cont = exploreForward(gid, fgid);
+  //       if (!cont) {
+  //         matchingCount = -1;
+  //         checkStack.length = stackLength;
+  //         csToMatchIndex.length = stackLength;
+  //       }
+  //     } else {
+  //       for (const fgid in groups) {
+  //         exploreForward(gid, +fgid);
+  //       }
+  //     }
+
+  //     if (!matching) {
+  //       matching = true;
+  //       checkStack.length = stackLength;
+  //     }
+  //   }
+  // }
+
   /** Generate SMILES string from parsed data.
-   * @param showImplcities - Render implicit groups? (if .isImplicit === true)
+   * @param showImplicits - Render implicit groups? (if .isImplicit === true)
   */
   public generateSMILES(showImplicits = false): string {
     /** Assemble and return SMILES string from a StackItem */
@@ -526,164 +499,6 @@ export class Environment {
     }
     return smiles;
   }
-
-  /**
-   * Generate molecular formula
-   * e.g. "C2H4O2"
-   * @param detailed - If true, will keep [NH4+] and not split it up, keep charges etc...
-   * @param html - Return formula as HTML?
-   * @param useHillSystem - Use hill system to order formula in conventional way?
-   */
-  public generateMolecularFormula(opts: ICountAtoms = {}, html = false): string {
-    opts.ignoreCharge = true;
-    let count = this.countAtoms(opts);
-    return assembleMolecularFormula(count, html);
-  }
-  /**
-   * Generate empirical formula
-   * e.g. "C2H4O2" -> "CH2O"
-   * @param html - Return formula as HTML?
-   * @param useHillSystem - Use hill system to order formula in conventional way?
-   */
-  public generateEmpiricalFormula(html = false, useHillSystem = true): string {
-    let count = this.countAtoms({ splitGroups: true, hillSystemOrder: useHillSystem });
-    return assembleEmpiricalFormula(count, html);
-  }
-  /**
-   * Generate condensed formula
-   * e.g. "C2H4O2" -> CH3COOH
-   * - collapseSucecssiveGroups => condense groups e.g. "CH3CH2CH2CH3" -> "CH3(CH2)2CH3"
-   * @param html - Return formula as HTML?
-   */
-  public generateCondensedFormula(html = false, collapseSucecssiveGroups = true): string {
-    let elements: Map<string, number>[] = []; // Array of elements for each group
-    const stack: number[] = []; // Stack of IDs to this._group (or NaN if done)
-    const doneGroups = new Set<number>(); // Set of group IDs which have been done
-    stack.push(+Object.keys(this._groups)[0]);
-
-    while (stack.length !== 0) {
-      const i = stack.length - 1, group = this._groups[stack[i]];
-      if (isNaN(stack[i]) || doneGroups.has(group.ID)) {
-        stack.splice(i, 1);
-      } else {
-        let groupElements = new Map<string, number>();
-        groupElements.set(group.toStringFancy(), 1);
-        for (let j = group.bonds.length - 1; j >= 0; j--) {
-          const bond = group.bonds[j];
-          if (!doneGroups.has(bond.dest) && this._groups[bond.dest].bonds.length === 0) {
-            let el = this._groups[bond.dest].toStringFancy();
-            groupElements.set(el, (groupElements.get(el) ?? 0) + 1);
-            doneGroups.add(bond.dest);
-          }
-          stack.push(bond.dest);
-        }
-        elements.push(groupElements);
-        stack[i] = NaN;
-        doneGroups.add(group.ID);
-      }
-    }
-
-    let string = '', lastSegment: string, segCount = 0;
-    elements.forEach(map => {
-      let j = 0, segStr = '';
-      map.forEach((count, el) => {
-        let str = count === 1 ? el : el + (html ? "<sub>" + numstr(count) + "</sub>" : count.toString());
-        if (j > 0 && j < map.size - 1) str = "(" + str + ")";
-        j++;
-        segStr += str;
-      });
-      if (collapseSucecssiveGroups) {
-        if (lastSegment === undefined) {
-          lastSegment = segStr;
-          segCount = 1;
-        } else if (segStr === lastSegment) {
-          segCount++;
-        } else {
-          string += segCount === 1 ? lastSegment : "(" + lastSegment + ")" + (html ? "<sub>" + numstr(segCount) + "</sub>" : segCount.toString());
-          lastSegment = segStr;
-          segCount = 1;
-        }
-      } else {
-        string += segStr;
-      }
-    });
-    if (collapseSucecssiveGroups && segCount !== 0) {
-      string += segCount === 1 ? lastSegment : "(" + lastSegment + ")" + (html ? "<sub>" + numstr(segCount) + "</sub>" : segCount.toString());
-    }
-    return string;
-  }
-  //#endregion
-
-  /** Return array of functional groups */
-  public getFunctionalGroups() {
-    interface Where { pos: number; symbol: string; };
-    const addFGroups = (group: string, where: Where) => {
-      if (fgroups.has(group)) fgroups.get(group).push(where);
-      else fgroups.set(group, [where]);
-    };
-
-    const fgroups = new Map<string, Where[]>();
-    const stack: number[] = []; // Stack of IDs to this._group (or NaN if done)
-    const doneGroups = new Set<number>(); // Set of group IDs which have been done
-    let hasC = false; // Has a carbon atom?
-    stack.push(+Object.keys(this._groups)[0]);
-
-    while (stack.length !== 0) {
-      const i = stack.length - 1, group = this._groups[stack[i]];
-      if (isNaN(stack[i]) || doneGroups.has(group.ID)) {
-        stack.splice(i, 1);
-      } else {
-        // Halogen
-        if (group.isElement("F", "Cl", "Br", "I")) {
-          addFGroups("haloalkane", { pos: group.smilesStringPosition, symbol: group.getElementString() });
-        }
-
-        for (let j = group.bonds.length - 1; j >= 0; j--) {
-          const bond = group.bonds[j], bondedGroup = this._groups[bond.dest], isC = group.isElement("C");
-          if (isC && !hasC) hasC = true;
-          // Alkene/Alkyne
-          group.bonds.forEach(bond => {
-            if (isC && bondedGroup.isElement("C")) {
-              if (bond.bond === "=") addFGroups("alkene", { pos: bond.smilesPosition, symbol: "=" }); // C=C
-              else if (bond.bond === "#") addFGroups("alkyne", { pos: bond.smilesPosition, symbol: "#" }); // C#C
-            }
-          });
-
-          // Halogen
-          if (bondedGroup.isElement("F", "Cl", "Br", "I")) {
-            addFGroups("haloalkane", { pos: bondedGroup.smilesStringPosition, symbol: bondedGroup.getElementString() });
-          }
-
-          // Alcohol: -OH
-          else if ((group.isElement("O") && bondedGroup.isElement("H")) || (group.isElement("H") && bondedGroup.isElement("O"))) {
-            addFGroups("alcohol", { pos: group.smilesStringPosition, symbol: "OH" });
-          }
-
-          // Nitrile: -C#N
-          else if (bond.bond === "#" && ((group.isElement("C") && bondedGroup.isElement("N")) || (group.isElement("N") && bondedGroup.isElement("C")))) {
-            addFGroups("nitrile", { pos: group.smilesStringPosition, symbol: "C#N" });
-          }
-
-          // Ketone / Aldehyde
-          else if (bond.bond === "=" && ((group.isElement("C") && bondedGroup.isElement("O")) || (group.isElement("O") && bondedGroup.isElement("C")))) {
-            const hasH = group.bonds.some(bond => this._groups[bond.dest].isElement("H"));
-            addFGroups(hasH ? "aldehyde" : "ketone", { pos: group.smilesStringPosition, symbol: hasH ? "C(H)=O" : "C=O" });
-          }
-
-          stack.push(bond.dest);
-        }
-        stack[i] = NaN;
-        doneGroups.add(group.ID);
-      }
-    }
-
-    // Remove groups which depend on a carbon
-    if (!hasC) {
-      fgroups.delete("haloalkane");
-    }
-
-    return fgroups;
-  }
 }
 
-export default Environment;
+export default SMILES;

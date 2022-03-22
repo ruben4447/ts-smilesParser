@@ -1,4 +1,4 @@
-import Environment from './classes/Environment';
+import SMILES from './classes/SMILES';
 import * as utils from './utils';
 globalThis.utils = utils;
 import * as dataVars from './data-vars';
@@ -6,8 +6,9 @@ globalThis.dataVars = dataVars;
 import $globals from './globals';
 globalThis.$globals = $globals;
 
-var canvas: HTMLCanvasElement, env: Environment;
+var canvas: HTMLCanvasElement, env: SMILES;
 var inputSMILES: HTMLInputElement, elOutput: HTMLElement, inputSplitFormula: HTMLInputElement, selectBoolOption: HTMLSelectElement, inputBoolOption: HTMLInputElement;
+var parseTime = 0;
 
 function _main() {
   let p = document.createElement("p");
@@ -54,14 +55,14 @@ function _main() {
   canvas.style.border = '2px solid black';
   document.body.appendChild(canvas);
 
-  env = new Environment(canvas);
+  env = new SMILES(canvas);
   $globals.env = env;
   env.parseOptions.addImplicitHydrogens = true;
   env.parseOptions.checkBondCount = false;
   env.parseOptions.enableRings = true;
   inputBoolOption.checked = env.parseOptions[selectBoolOption.value];
-  // parseSmiles("C(O[H])CO");
-  parseSmiles("CBr");
+  parseSmiles("C(=O)O");
+  // parseSmiles("CBr");
   // parseSmiles("C1C(=O)CC1");
   // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
 }
@@ -84,25 +85,39 @@ function parseSmiles(smiles?: string) {
 
   env.setSMILESstring(smiles);
   try {
+    parseTime = performance.now();
     env.parse();
+    parseTime = performance.now() - parseTime;
   } catch (e) {
     elOutput.innerText = `Error!`;
     _error(e);
     $globals.error = e;
+    parseTime = -1;
     return;
   }
 
+  const molecules = env.getMolecules();
+
   // SMILES
-  elOutput.innerHTML += `<b>SMILES</b>: ${env.generateSMILES()}`;
+  elOutput.innerHTML += `<b>SMILES</b>: ${env.generateSMILES()} | Took <em>${utils.numstr(parseTime)}</em> ms | Created ${utils.numstr(molecules.length)} molecule${molecules.length === 1 ? '' : 's'}`;
 
-  // Atoms
-  elOutput.innerHTML += ` | <strong>Molecular</strong>: ${env.generateMolecularFormula({ splitGroups: inputSplitFormula.checked, hillSystemOrder: $globals.useHillSystem }, true)}`;
-  elOutput.innerHTML += ` | <strong>Empirical</strong>: ${env.generateEmpiricalFormula(true, $globals.useHillSystem)}`;
-  elOutput.innerHTML += ` | <strong>Condensed</strong>: ${env.generateCondensedFormula(true, true)}`;
+  const mdiv = document.createElement("div");
+  elOutput.appendChild(mdiv);
 
-  const fgroups = env.getFunctionalGroups();
-  let fgroupStr = Array.from(fgroups).map(([group, locations]) => `<strong>${group}${locations.length > 1 ? ` &times; ${utils.numstr(locations.length)}` : ''}</strong>: ` + locations.map(where => `${where.symbol} (at ${where.pos})`)).join('; ');
-  elOutput.innerHTML += ` | <strong>Functional Groups</strong>: ${fgroupStr}`;
+  molecules.forEach(molecule => {
+    const el = document.createElement("p");
+    mdiv.appendChild(el);
+
+    el.innerHTML = `&bull; &nbsp; ${molecule.generateSMILES()}`;
+    el.innerHTML += ` | <strong>Mr</strong> = ${utils.numstr(molecule.calculateMr())}`;
+    el.innerHTML += ` | <strong>Molecular</strong>: ${molecule.generateMolecularFormula({ splitGroups: inputSplitFormula.checked, hillSystemOrder: $globals.useHillSystem }, true)}`;
+    el.innerHTML += ` | <strong>Empirical</strong>: ${molecule.generateEmpiricalFormula(true, $globals.useHillSystem)}`;
+    el.innerHTML += ` | <strong>Condensed</strong>: ${molecule.generateCondensedFormula(true, true)}`;
+
+    const fgroups = molecule.getFunctionalGroups();
+    let fgroupStr = Array.from(fgroups).map(([group, locations]) => `<strong>${group}${locations.length > 1 ? ` &times; ${utils.numstr(locations.length)}` : ''}</strong>: ` + locations.map(where => `${where.symbol} (at ${where.pos})`)).join('; ');
+    el.innerHTML += ` | <strong>Functional Groups</strong>: ${fgroupStr}`;
+  });
 }
 
 window.addEventListener('load', _main);
