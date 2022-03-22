@@ -1,10 +1,11 @@
 import { organicSubset } from "../data-vars";
 import { BondType } from "../types/Bonds";
-import { createGenerateSmilesStackItemObject, createParseOptionsObject, IAtomCount, IElementToIonMap, IGenerateSmilesStackItem, IParseOptions } from "../types/Environment";
+import { createGenerateSmilesStackItemObject, createParseOptionsObject, IAtomCount, ICountAtoms, IElementToIonMap, IGenerateCondensedFormulaItem, IGenerateSmilesStackItem, IParseOptions, IRingMap } from "../types/Environment";
 import { IGroupMap } from "../types/Group";
-import { arrFromBack, assembleEmpiricalFormula, assembleMolecularFormula, extractBetweenMatching, extractElement, extractInteger, getBondNumber, isBondChar, parseChargeString, parseInorganicString, _chargeRegex1, _chargeRegex2, _regexNum } from "../utils";
+import { arrFromBack, assembleEmpiricalFormula, assembleMolecularFormula, extractBetweenMatching, extractDuplicates, extractElement, extractInteger, getBondNumber, isBondChar, numstr, parseChargeString, parseDigitString, parseInorganicString, _chargeRegex1, _chargeRegex2, _regexNum } from "../utils";
 import { AdvError } from "./Error";
 import { Group, resetGroupID } from "./Group";
+import Ring from "./Rings";
 
 export class Environment {
   private _canvas: HTMLCanvasElement;
@@ -13,6 +14,8 @@ export class Environment {
   private _smilesString: string = '';
   private _groups: IGroupMap;
   public parseOptions: IParseOptions = createParseOptionsObject();
+  private _openRings: IRingMap; // What rings are open? This index corresponds to the ring digits
+  private _rings: Ring[];
 
   public constructor(canvas: HTMLCanvasElement) {
     this._canvas = canvas;
@@ -28,6 +31,8 @@ export class Environment {
    */
   public parse() {
     this._groups = {};
+    this._openRings = {};
+    this._rings = [];
     resetGroupID();
     try {
       const mainChain: Group[] = [];
@@ -35,18 +40,17 @@ export class Environment {
       // Add implicit hydrogens?
       if (this.parseOptions.addImplicitHydrogens) this._addImplcitHydrogens();
       // Check bond count
-      if (this.parseOptions.checkBondCount) {
-        try {
-          this.checkBondCounts();
-        } catch (e) {
-          if (e instanceof AdvError) {
-            let col = e.columnNumber;
-            e.insertMessage(`Error in SMILES '${this._smilesString}'`);
-            e.setUnderlineString(this._smilesString);
-            e.columnNumber = col;
-          }
-          throw e;
+      try {
+        if (this.parseOptions.checkBondCount) this.checkBondCounts(); // Check bond counts
+        this._checkOpenRings();
+      } catch (e) {
+        if (e instanceof AdvError) {
+          let col = e.columnNumber;
+          e.insertMessage(`Error in SMILES '${this._smilesString}'`);
+          e.setUnderlineString(this._smilesString);
+          e.columnNumber = col;
         }
+        throw e;
       }
     } catch (e) {
       // Turn AdvError into Error - transfer fancy message
@@ -57,7 +61,7 @@ export class Environment {
 
   private _tryParse(smiles: string, groups: Group[], parent?: Group, chainDepth = 0, indexOffset = 0) {
     try {
-      return this._parse(smiles, groups, parent, chainDepth);
+      return this._parse(smiles, groups, parent, chainDepth, indexOffset);
     } catch (e) {
       if (e instanceof AdvError) {
         let colNo = indexOffset + e.columnNumber;
@@ -70,7 +74,7 @@ export class Environment {
   }
 
   /** NOT designed to be called directly */
-  private _parse(smiles: string, groups: Group[], parent?: Group, chainDepth = 0) {
+  private _parse(smiles: string, groups: Group[], parent?: Group, chainDepth = 0, indexOffset = 0) {
     let currentGroup: Group = undefined, currentBond: BondType, currentBondPos = NaN;
     for (let pos = 0; pos < smiles.length;) {
       // #region Explicit Bond
@@ -84,7 +88,7 @@ export class Environment {
 
       // {...}
       // #region Charge
-      if (smiles[pos] === '{') {
+      if (smiles[pos] === '{' && this.parseOptions.enableChargeClauses) {
         let extraction = extractBetweenMatching(smiles, "{", "}", pos);
         // Was the extraction OK?
         if (extraction.openCount !== 0) throw new AdvError(`Syntax Error: unmatched closing brace at position ${pos} '${smiles[pos]}'`, smiles.substr(pos)).setColumnNumber(pos);
@@ -108,7 +112,7 @@ export class Environment {
 
       // [...]
       // #region Inorganic Atom/Ion
-      else if (smiles[pos] === '[') {
+      else if (smiles[pos] === '[' && this.parseOptions.enableInorganicAtoms) {
         // Extract between [...]
         let extraction = extractBetweenMatching(smiles, "[", "]", pos);
         if (extraction.openCount !== 0) throw new AdvError(`Syntax Error: unmatched closing bracket at position ${pos} '${smiles[pos]}'`, smiles.substr(pos)).setColumnNumber(pos);
@@ -118,11 +122,11 @@ export class Environment {
         try {
           if (info.error === undefined) {
             // Are there any elements?
-            if (info.elements.length === 0) {
+            if (info.elements.size === 0) {
               throw new AdvError(`Syntax Error: expected element`, extraction.extracted || "]").setColumnNumber(pos + 1);
             } else {
-              if (currentGroup === undefined) currentGroup = new Group({ chainDepth }).setSMILESposInfo(pos, extraction.extracted.length + 2);
-              currentGroup.elements.push(...info.elements);
+              if (currentGroup === undefined) currentGroup = new Group({ chainDepth }).setSMILESposInfo(indexOffset + pos, extraction.extracted.length + 2);
+              info.elements.forEach((value, key) => currentGroup.addElement(key, value));
               currentGroup.charge = info.charge;
 
               groups.push(currentGroup);
@@ -143,7 +147,7 @@ export class Environment {
 
       // (...)
       // #region Chains
-      else if (smiles[pos] === '(') {
+      else if (smiles[pos] === '(' && this.parseOptions.enableChains) {
         // Extract chain SMILES string
         let extraction = extractBetweenMatching(smiles, "(", ")", pos);
         if (extraction.openCount !== 0) throw new AdvError(`Syntax Error: unmatched closing parenthesis at position ${pos} '${smiles[pos]}'`, smiles.substr(pos)).setColumnNumber(pos);
@@ -153,7 +157,7 @@ export class Environment {
         if (groups.length === 0) throw new AdvError(`Syntax Error: unexpected SMILES chain (no parent could be found)`, "(" + extraction.extracted + ")").setColumnNumber(pos);
         const parent = groups[groups.length - 1], chainGroups: Group[] = [];
         try {
-          this._tryParse(extraction.extracted, chainGroups, parent, chainDepth + 1, pos + 1);
+          this._tryParse(extraction.extracted, chainGroups, parent, chainDepth + 1, indexOffset + pos + 1);
         } catch (e) {
           if (e instanceof AdvError) e.insertMessage(`Error whilst parsing chain "(${extraction.extracted})" at position ${pos}: `);
           throw e;
@@ -163,6 +167,40 @@ export class Environment {
         continue; // We dont wanna process bonds (nothing on the main chain would've changed)
       }
       // #endregion
+
+      // #region Ring digits
+      else if ((_regexNum.test(smiles[pos]) || smiles[pos] === '%') && this.parseOptions.enableRings) {
+        if (groups.length === 0) throw new AdvError(`Syntax Error: unexpected ring digit`, smiles[pos]).setColumnNumber(pos);
+        const obj = parseDigitString(smiles.substr(pos));
+        const extractedString = smiles.substr(pos, obj.endIndex);
+
+        // No digits?
+        if (obj.digits.length === 0 || obj.digits.some(n => isNaN(n))) throw new AdvError(`Syntax Error: invalid syntax`, extractedString).setColumnNumber(pos);
+        // Duplicates?
+        const duplicates = extractDuplicates(obj.digits);
+        if (duplicates.length !== 0) throw new AdvError(`Syntax Error: duplicate ring endings found: ${duplicates.join(', ')}`, extractedString).setColumnNumber(pos);
+        // Add to atom
+        const group = groups[groups.length - 1];
+        group.ringDigits.push(...obj.digits);
+
+        // Update _openRings
+        // Add last atom to ring if it is opened
+        // Do not add if ring is closed -> this was handled last time
+        obj.digits.forEach(digit => {
+          if (this._openRings[digit] === undefined) {
+            const ring = new Ring(digit);
+            this._openRings[digit] = ring;
+            this._rings.push(ring);
+            this._openRings[digit].members.push(group.ID);
+          } else {
+            delete this._openRings[digit];
+          }
+        });
+
+        pos += extractedString.length;
+        continue;
+      }
+      //#endregion
 
       // #region Organic Atom
       // Attempt to extract atom
@@ -176,8 +214,8 @@ export class Environment {
               throw new AdvError(`Syntax Error: expected organic element[${Object.keys(organicSubset).join(',')}], got '${extracted}'`, extracted).setColumnNumber(pos);
             } else {
               // Add element to group information
-              if (currentGroup === undefined) currentGroup = new Group({ chainDepth }).setSMILESposInfo(pos, extracted.length);
-              currentGroup.elements.push(extracted);
+              if (currentGroup === undefined) currentGroup = new Group({ chainDepth }).setSMILESposInfo(indexOffset + pos, extracted.length);
+              currentGroup.addElement(extracted);
               groups.push(currentGroup);
               currentGroup = undefined;
               pos += extracted.length;
@@ -195,11 +233,11 @@ export class Environment {
         // Link last two items?
         if (groups.length >= 2) {
           let one = arrFromBack(groups, 1), two = arrFromBack(groups, 2);
-          let ok = two.addBond(currentBond, one);
+          let ok = two.addBond(currentBond, one, indexOffset + currentBondPos);
           if (!ok) throw new AdvError(`Bond Error: attempted to create explicit bond between this (${one.toString()}) and last atom (${two.toString()})`, currentBond).setColumnNumber(currentBondPos);
         } else if (groups.length === 1 && parent instanceof Group) {
           // Link to chain parent
-          let ok = parent.addBond(currentBond, groups[0]);
+          let ok = parent.addBond(currentBond, groups[0], indexOffset + currentBondPos);
           if (!ok) throw new AdvError(`Bond Error: attempted to create explicit bond between this (${groups[0].toString()}) and chain parent atom '${parent.toString()}'`, currentBond).setColumnNumber(currentBondPos);
         } else {
           throw new AdvError(`Syntax Error: unexpected bond '${currentBond}'`, currentBond).setColumnNumber(currentBondPos);
@@ -211,12 +249,20 @@ export class Environment {
         if (groups.length >= 2) {
           // Add default, single bond to last atom
           let one = arrFromBack(groups, 1), two = arrFromBack(groups, 2);
-          let ok = two.addBond(defaultBond, one);
+          let ok = two.addBond(defaultBond, one, indexOffset + currentBondPos);
           if (!ok) throw new AdvError(`Bond Error: attempted to create implicit bond between this (${one.toString()}) and last atom (${two.toString()})`, smiles[pos]).setColumnNumber(pos);
         } else if (groups.length === 1 && parent instanceof Group) {
           // Link to chain parent
-          let ok = parent.addBond(defaultBond, groups[0]);
+          let ok = parent.addBond(defaultBond, groups[0], indexOffset + currentBondPos);
           if (!ok) throw new AdvError(`Bond Error: attempted to create implicit bond between this (${groups[0].toString()}) and chain parent atom '${parent.toString()}'`, smiles[pos]).setColumnNumber(pos);
+        }
+      }
+      //#endregion
+
+      // #region Add to Any Open Rings
+      for (let digit in this._openRings) {
+        if (this._openRings.hasOwnProperty(digit)) {
+          this._openRings[digit].members.push(groups[groups.length - 1].ID);
         }
       }
       //#endregion
@@ -235,8 +281,8 @@ export class Environment {
           const bonds = this._getBondCount(group);
           if (group.charge === 0) {
             // Find target bonds
-            let targetBonds: number = NaN;
-            for (let n of organicSubset[group.elements[0]]) {
+            let targetBonds: number = NaN, el = Array.from(group.elements.keys())[0];
+            for (let n of organicSubset[el]) {
               if (n >= bonds) {
                 targetBonds = n
                 break;
@@ -246,7 +292,8 @@ export class Environment {
             if (!isNaN(targetBonds)) {
               let hCount = targetBonds - bonds;
               for (let h = 0; h < hCount; h++) {
-                let hydrogen = new Group({ elements: ['H'], chainDepth: group.chainDepth + 1 });
+                let hydrogen = new Group({ chainDepth: group.chainDepth + 1 });
+                hydrogen.addElement("H");
                 hydrogen.isImplicit = true;
                 group.addBond('-', hydrogen);
                 this._groups[hydrogen.ID] = hydrogen;
@@ -270,14 +317,14 @@ export class Environment {
           // If charge is zero, and not in organic subset, ignore
           if (group.charge === 0) {
             if (group.inOrganicSubset()) {
-              let bondNumbers = organicSubset[group.elements[0]], ok = false;
+              let el = Array.from(group.elements.keys())[0], bondNumbers = organicSubset[el], ok = false;
               for (let n of bondNumbers) {
                 if (n === bonds) {
                   ok = true;
                   break;
                 }
               }
-              if (!ok) throw new AdvError(`Bond Error: invalid bond count for organic atom '${group.elements[0]}': ${bonds}. Expected ${bondNumbers.join(' or ')}.`, group.elements[0]).setColumnNumber(group.smilesStringPosition);
+              if (!ok) throw new AdvError(`Bond Error: invalid bond count for organic atom '${el}': ${bonds}. Expected ${bondNumbers.join(' or ')}.`, el).setColumnNumber(group.smilesStringPosition);
             }
           }
         }
@@ -305,30 +352,48 @@ export class Environment {
     return count;
   }
 
+  /** Check that there are no open rings. */
+  private _checkOpenRings() {
+    for (let digit in this._openRings) {
+      if (this._openRings.hasOwnProperty(digit)) {
+        const ring = this._openRings[digit];
+        if (ring !== undefined) {
+          const openingGroup = this._groups[ring.members[0]];
+          throw new AdvError(`Ring Error: unclosed ring '${ring.digit}'`, this._smilesString.substr(openingGroup.smilesStringPosition)).setColumnNumber(openingGroup.smilesStringPosition);
+        }
+      }
+    }
+  }
+
   /**
    * Count each atom in parsed data
    * Order the AtomCount object via the Hill system
    * - Hill system => carbons, hydrogens, then other elements in alphabetical order
+   * - Ignore charge => ignore charge on atoms?
    */
-  public countAtoms(splitGroups = false, hillSystemOrder = true): IAtomCount[] {
+  public countAtoms(opts: ICountAtoms = {}): IAtomCount[] {
+    opts.splitGroups ??= false;
+    opts.hillSystemOrder ??= true;
+    opts.ignoreCharge ??= false;
+
     let atoms: IAtomCount[] = [], elementsPos: string[] = [];
     for (const id in this._groups) {
       if (this._groups.hasOwnProperty(id)) {
-        const group = this._groups[id];
-        if (splitGroups) {
-          for (const element of group.elements) {
-            let chargeStr = element + '{' + group.charge + '}', i = elementsPos.indexOf(chargeStr);
+        const group = this._groups[id], groupCharge = opts.ignoreCharge ? 0 : group.charge;
+        if (opts.splitGroups) {
+          group.elements.forEach((count, element) => {
+            let chargeStr = element + '{' + groupCharge + '}', i = elementsPos.indexOf(chargeStr);
             if (atoms[element] === undefined) {
-              atoms.push({ atom: element, charge: NaN, count: 0 }); // If splitting groups up, vannot associate charge
+              atoms.push({ atom: element, charge: NaN, count: 0 }); // If splitting groups up, cannot associate charge
               elementsPos.push(chargeStr);
               i = elementsPos.length - 1;
             }
-            atoms[i].count++;
-          }
+            atoms[i].count += count;
+          });
         } else {
-          let str = group.elements.join(''), chargeStr = str + '{' + group.charge + '}', i = elementsPos.indexOf(chargeStr);
+          let str = group.getElementString(true), chargeStr = str + '{' + groupCharge + '}', i = elementsPos.indexOf(chargeStr);
           if (atoms[i] === undefined) {
-            atoms.push({ atom: str, charge: group.charge, count: 0 });
+            atoms.push({ atom: str, charge: groupCharge, count: 0 });
             elementsPos.push(chargeStr);
             i = elementsPos.length - 1;
           }
@@ -336,7 +401,7 @@ export class Environment {
         }
       }
     }
-    if (splitGroups) {
+    if (opts.splitGroups) {
       // Deconstruct numbered atoms e.g. "H2": 1 --> "H": 2
       let newAtoms: IAtomCount[] = [], elementsPos: string[] = [];
       for (let i = 0; i < atoms.length; i++) {
@@ -361,7 +426,7 @@ export class Environment {
       }
       atoms = newAtoms;
     }
-    if (hillSystemOrder) {
+    if (opts.hillSystemOrder) {
       let newAtoms: IAtomCount[] = [], elementPos: string[] = [];
       // Carbons come first
       let carbons: IAtomCount[] = [];
@@ -376,7 +441,7 @@ export class Environment {
       // Hydrogens come second
       let hydrogens: IAtomCount[] = [];
       for (let i = atoms.length - 1; i >= 0; i--) {
-        if (atoms[i].atom === 'J') {
+        if (atoms[i].atom === 'H') {
           hydrogens.push(atoms[i]);
           atoms.splice(i, 1);
         }
@@ -448,6 +513,7 @@ export class Environment {
         if (render) {
           stack[i].smiles += stack[i].bond && stack[i].bond !== '-' ? stack[i].bond : '';
           stack[i].smiles += group.toString();
+          if (group.ringDigits.length !== 0) stack[i].smiles += group.ringDigits.map(n => '%' + n).join('');
         }
         stack[i].handled = true;
 
@@ -468,8 +534,9 @@ export class Environment {
    * @param html - Return formula as HTML?
    * @param useHillSystem - Use hill system to order formula in conventional way?
    */
-  public generateMolecularFormula(detailed?: boolean, html = false, useHillSystem = true): string {
-    let count = this.countAtoms(detailed, useHillSystem);
+  public generateMolecularFormula(opts: ICountAtoms = {}, html = false): string {
+    opts.ignoreCharge = true;
+    let count = this.countAtoms(opts);
     return assembleMolecularFormula(count, html);
   }
   /**
@@ -479,10 +546,144 @@ export class Environment {
    * @param useHillSystem - Use hill system to order formula in conventional way?
    */
   public generateEmpiricalFormula(html = false, useHillSystem = true): string {
-    let count = this.countAtoms(true, useHillSystem);
+    let count = this.countAtoms({ splitGroups: true, hillSystemOrder: useHillSystem });
     return assembleEmpiricalFormula(count, html);
   }
+  /**
+   * Generate condensed formula
+   * e.g. "C2H4O2" -> CH3COOH
+   * - collapseSucecssiveGroups => condense groups e.g. "CH3CH2CH2CH3" -> "CH3(CH2)2CH3"
+   * @param html - Return formula as HTML?
+   */
+  public generateCondensedFormula(html = false, collapseSucecssiveGroups = true): string {
+    let elements: Map<string, number>[] = []; // Array of elements for each group
+    const stack: number[] = []; // Stack of IDs to this._group (or NaN if done)
+    const doneGroups = new Set<number>(); // Set of group IDs which have been done
+    stack.push(+Object.keys(this._groups)[0]);
+
+    while (stack.length !== 0) {
+      const i = stack.length - 1, group = this._groups[stack[i]];
+      if (isNaN(stack[i]) || doneGroups.has(group.ID)) {
+        stack.splice(i, 1);
+      } else {
+        let groupElements = new Map<string, number>();
+        groupElements.set(group.toStringFancy(), 1);
+        for (let j = group.bonds.length - 1; j >= 0; j--) {
+          const bond = group.bonds[j];
+          if (!doneGroups.has(bond.dest) && this._groups[bond.dest].bonds.length === 0) {
+            let el = this._groups[bond.dest].toStringFancy();
+            groupElements.set(el, (groupElements.get(el) ?? 0) + 1);
+            doneGroups.add(bond.dest);
+          }
+          stack.push(bond.dest);
+        }
+        elements.push(groupElements);
+        stack[i] = NaN;
+        doneGroups.add(group.ID);
+      }
+    }
+
+    let string = '', lastSegment: string, segCount = 0;
+    elements.forEach(map => {
+      let j = 0, segStr = '';
+      map.forEach((count, el) => {
+        let str = count === 1 ? el : el + (html ? "<sub>" + numstr(count) + "</sub>" : count.toString());
+        if (j > 0 && j < map.size - 1) str = "(" + str + ")";
+        j++;
+        segStr += str;
+      });
+      if (collapseSucecssiveGroups) {
+        if (lastSegment === undefined) {
+          lastSegment = segStr;
+          segCount = 1;
+        } else if (segStr === lastSegment) {
+          segCount++;
+        } else {
+          string += segCount === 1 ? lastSegment : "(" + lastSegment + ")" + (html ? "<sub>" + numstr(segCount) + "</sub>" : segCount.toString());
+          lastSegment = segStr;
+          segCount = 1;
+        }
+      } else {
+        string += segStr;
+      }
+    });
+    if (collapseSucecssiveGroups && segCount !== 0) {
+      string += segCount === 1 ? lastSegment : "(" + lastSegment + ")" + (html ? "<sub>" + numstr(segCount) + "</sub>" : segCount.toString());
+    }
+    return string;
+  }
   //#endregion
+
+  /** Return array of functional groups */
+  public getFunctionalGroups() {
+    interface Where { pos: number; symbol: string; };
+    const addFGroups = (group: string, where: Where) => {
+      if (fgroups.has(group)) fgroups.get(group).push(where);
+      else fgroups.set(group, [where]);
+    };
+
+    const fgroups = new Map<string, Where[]>();
+    const stack: number[] = []; // Stack of IDs to this._group (or NaN if done)
+    const doneGroups = new Set<number>(); // Set of group IDs which have been done
+    let hasC = false; // Has a carbon atom?
+    stack.push(+Object.keys(this._groups)[0]);
+
+    while (stack.length !== 0) {
+      const i = stack.length - 1, group = this._groups[stack[i]];
+      if (isNaN(stack[i]) || doneGroups.has(group.ID)) {
+        stack.splice(i, 1);
+      } else {
+        // Halogen
+        if (group.isElement("F", "Cl", "Br", "I")) {
+          addFGroups("haloalkane", { pos: group.smilesStringPosition, symbol: group.getElementString() });
+        }
+
+        for (let j = group.bonds.length - 1; j >= 0; j--) {
+          const bond = group.bonds[j], bondedGroup = this._groups[bond.dest], isC = group.isElement("C");
+          if (isC && !hasC) hasC = true;
+          // Alkene/Alkyne
+          group.bonds.forEach(bond => {
+            if (isC && bondedGroup.isElement("C")) {
+              if (bond.bond === "=") addFGroups("alkene", { pos: bond.smilesPosition, symbol: "=" }); // C=C
+              else if (bond.bond === "#") addFGroups("alkyne", { pos: bond.smilesPosition, symbol: "#" }); // C#C
+            }
+          });
+
+          // Halogen
+          if (bondedGroup.isElement("F", "Cl", "Br", "I")) {
+            addFGroups("haloalkane", { pos: bondedGroup.smilesStringPosition, symbol: bondedGroup.getElementString() });
+          }
+
+          // Alcohol: -OH
+          else if ((group.isElement("O") && bondedGroup.isElement("H")) || (group.isElement("H") && bondedGroup.isElement("O"))) {
+            addFGroups("alcohol", { pos: group.smilesStringPosition, symbol: "OH" });
+          }
+
+          // Nitrile: -C#N
+          else if (bond.bond === "#" && ((group.isElement("C") && bondedGroup.isElement("N")) || (group.isElement("N") && bondedGroup.isElement("C")))) {
+            addFGroups("nitrile", { pos: group.smilesStringPosition, symbol: "C#N" });
+          }
+
+          // Ketone / Aldehyde
+          else if (bond.bond === "=" && ((group.isElement("C") && bondedGroup.isElement("O")) || (group.isElement("O") && bondedGroup.isElement("C")))) {
+            const hasH = group.bonds.some(bond => this._groups[bond.dest].isElement("H"));
+            addFGroups(hasH ? "aldehyde" : "ketone", { pos: group.smilesStringPosition, symbol: hasH ? "C(H)=O" : "C=O" });
+          }
+
+          stack.push(bond.dest);
+        }
+        stack[i] = NaN;
+        doneGroups.add(group.ID);
+      }
+    }
+
+    // Remove groups which depend on a carbon
+    if (!hasC) {
+      fgroups.delete("haloalkane");
+    }
+
+    return fgroups;
+  }
 }
 
 export default Environment;

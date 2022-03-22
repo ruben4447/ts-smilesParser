@@ -8,8 +8,13 @@ export interface IExtractBetweenInformation {
 }
 
 export interface IParseInorganicString {
-  elements: string[];
+  elements: Map<string, number>;
   charge: number;
   endIndex: number;
   error?: string; // Error message if any
+}
+
+export interface IParseDigitString {
+  digits: number[];
+  endIndex: number;
 }

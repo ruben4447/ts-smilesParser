@@ -1,7 +1,7 @@
 import { symbolsByLength } from "./data-vars";
 import { BondType } from "./types/Bonds";
 import { IAtomCount } from "./types/Environment";
-import { IExtractBetweenInformation, IParseInorganicString } from "./types/utils";
+import { IExtractBetweenInformation, IParseDigitString, IParseInorganicString } from "./types/utils";
 
 export const getTextMetrics = (ctx: CanvasRenderingContext2D, text: string) => {
   const metrics = ctx.measureText(text);
@@ -50,22 +50,27 @@ export const _chargeRegex2 = /^([\+]+|[\-]+)$/; // e.g. +++
  * Extract ring digits from ring digit string
  * @param string - ring digit string e.g. "12%10%3" -> [1, 2, 10, 3]
  */
-export function parseDigitString(string: string): number[] {
-  let digits = [], metPercent = false;
-  for (let i = 0; i < string.length; i++) {
+export function parseDigitString(string: string): IParseDigitString {
+  let i: number, digits = [], metPercent = false;
+  for (i = 0; i < string.length; i++) {
     if (string[i] === '%') {
       metPercent = true;
       digits.push("");
       continue;
-    }
-
-    if (metPercent) {
-      digits[digits.length - 1] += string[i];
+    } else if (_regexNum.test(string[i])) {
+      if (metPercent) {
+        digits[digits.length - 1] += string[i];
+      } else {
+        digits.push(string[i]);
+      }
     } else {
-      digits.push(string[i]);
+      break;
     }
   }
-  return digits.map(x => parseInt(x)).filter(n => !isNaN(n));
+  return {
+    digits: digits.map(x => parseInt(x)),
+    endIndex: i,
+  };
 }
 
 /** Does an array have duplicates? */
@@ -142,17 +147,20 @@ export function extractInteger(str: string): number {
 }
 export const _regexNum = /[0-9]/;
 
+export const numstr = (n: number) => n.toLocaleString("en-GB");
+
 /**
  * Parse inorganic string e.g. 'NH4+' (stuff inside [...])
  * @throws AdvError
 */
 export function parseInorganicString(str: string): IParseInorganicString {
-  let info: IParseInorganicString = { elements: [], charge: 0, endIndex: 0 }, i: number;
+  let info: IParseInorganicString = { elements: new Map(), charge: 0, endIndex: 0 }, i: number, lastAtom: string;
   for (i = 0; i < str.length;) {
     // Atom?
     let atom = extractElement(str.substr(i));
     if (atom) {
-      info.elements.push(atom);
+      lastAtom = atom
+      info.elements.set(atom, (info.elements.get(atom) ?? 0) + 1);
       i += atom.length;
     } else {
       // Number after element?
@@ -162,7 +170,7 @@ export function parseInorganicString(str: string): IParseInorganicString {
           info.error = `Syntax Error: expected integer, got '${numStr}'`;
           break;
         } else {
-          info.elements[info.elements.length - 1] += numStr;
+          info.elements.set(lastAtom, info.elements.get(lastAtom) + (num - 1)); // num - 1 as last atom already added once
           i += numStr.length;
         }
       } else {
@@ -180,6 +188,7 @@ export function parseInorganicString(str: string): IParseInorganicString {
     }
   }
   info.endIndex = i;
+  console.log(info)
   return info;
 }
 
@@ -192,7 +201,7 @@ export const chargeToString = (charge: number): string => (charge < 0 ? '-' : '+
  */
 export function assembleMolecularFormula(atoms: IAtomCount[], html = false): string {
   let str = '';
-  for (const group of atoms) {
+  for (let group of atoms) {
     // Only one atom?
     let firstAtom = extractElement(group.atom), atom = firstAtom === group.atom ? group.atom : '(' + group.atom + ')';
     str += atom;
@@ -220,7 +229,7 @@ export function assembleEmpiricalFormula(atoms: IAtomCount[], html = false): str
     if (counts.hasOwnProperty(atom)) {
       counts[atom] /= gcd;
       str += atom;
-      if (counts[atom] !== 1) str += html ? `<sub>${counts[atom]}</sub>` : counts[atom];
+      if (counts[atom] !== 1) str += html ? `<sub>${numstr(counts[atom])}</sub>` : counts[atom];
     }
   }
   return str;
@@ -248,3 +257,6 @@ export function gcdOfManyNumbers(numbers: number[]): number {
   }
   return a;
 }
+
+/** Extract duplicates from array */
+export const extractDuplicates = <T>(array: T[]): T[] => array.filter(x => array.indexOf(x) !== array.lastIndexOf(x));

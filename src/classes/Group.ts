@@ -1,14 +1,15 @@
 import { organicSubset } from "../data-vars";
 import { BondType, IBond } from "../types/Bonds";
+import { IAtomCount } from "../types/Environment";
 import { IGroupInformation } from "../types/Group";
-import { chargeToString, getBondNumber } from "../utils";
+import { chargeToString, getBondNumber, numstr } from "../utils";
 
 var ID = 0; // Next ID
 export const resetGroupID = () => ID = 0;
 
 export class Group {
   public readonly ID = ID++;
-  public elements: string[];
+  public elements: Map<string, number>;
   public charge: number;
   public bonds: IBond[];
   public ringDigits: number[] = []; // Are we defined with any ring digits?
@@ -20,7 +21,7 @@ export class Group {
 
   public constructor(data?: IGroupInformation) {
     if (data === undefined) data = {};
-    this.elements = data.elements || [];
+    this.elements = data.elements || new Map();
     this.charge = data.charge === undefined ? 0 : data.charge;
     this.ringDigits = data.ringDigits || [];
     this.bonds = data.bonds || [];
@@ -28,7 +29,7 @@ export class Group {
   }
 
   /** Is in organic subset */
-  public inOrganicSubset() { return this.elements.length === 1 && organicSubset[this.elements[0]] !== undefined; }
+  public inOrganicSubset() { return this.elements.size === 1 && organicSubset[Array.from(this.elements.keys())[0]] !== undefined && Array.from(this.elements.values())[0] === 1; }
 
   /** Get bonds we make with said group. Return BondType or null. */
   public getBondWith(group: Group): BondType | null {
@@ -39,21 +40,41 @@ export class Group {
   }
 
   /** Attempt to create bonds with said group. Return: successfull? */
-  public addBond(type: BondType, group: Group): boolean {
+  public addBond(type: BondType, group: Group, smilesPosition?: number): boolean {
     if (this === group) return false;
     if (this.getBondWith(group)) {
       return false;
     } else {
-      this.bonds.push({ bond: type, dest: group.ID });
+      this.bonds.push({ bond: type, dest: group.ID, smilesPosition });
       return true;
     }
   }
 
   /** Set position in SMILES string information */
-  setSMILESposInfo(pos: number, length: number): this {
+  public setSMILESposInfo(pos: number, length: number): this {
     this.smilesStringPosition = pos;
     this.smilesStringLength = length;
     return this;
+  }
+
+  /** Add <count> of an element to this.elements */
+  public addElement(element: string, count = 1) {
+    this.elements.set(element, (this.elements.get(element) ?? 0) + count);
+  }
+
+  /** Get element string { "A" => 1, "B" => 2 } goes to "AB2" */
+  public getElementString(html = false) {
+    return Array.from(this.elements).map(([element, count]) => count === 1 ? element : element + (html ? `<sub>${numstr(count)}</sub>` : count.toString())).join("");
+  }
+
+  /** Is this group a single element? */
+  public isElement(...elements: string[]) {
+    if (this.elements.size === 1) {
+      const [el, count] = Array.from(this.elements)[0];
+      return count === 1 && elements.indexOf(el) !== -1;
+    } else {
+      return false;
+    }
   }
 
   /** Get bond count - how mnay SINGLE bond equivalents we have (e.g. '=' would be +2) */
@@ -66,14 +87,45 @@ export class Group {
     return count;
   }
 
+  /** Count atoms in group */
+  public countAtoms(ignoreCharge = false): IAtomCount[] {
+    if (this.charge !== 0 && !ignoreCharge) {
+      let str = this.getElementString(), chargeStr = str + '{' + this.charge + '}';
+      return [{ atom: str, charge: this.charge, count: 1 }];
+    } else {
+      let atoms: IAtomCount[] = [], elementsPos: string[] = [];
+      this.elements.forEach((count, element) => {
+        let chargeStr = element + '{' + this.charge + '}', i = elementsPos.indexOf(chargeStr);
+        if (atoms[element] === undefined) {
+          atoms.push({ atom: element, charge: 0, count: 0 }); // If splitting groups up, cannot associate charge
+          elementsPos.push(chargeStr);
+          i = elementsPos.length - 1;
+        }
+        atoms[i].count += count;
+      });
+      return atoms;
+    }
+  }
+
   /** String representation of whole atom */
   public toString() {
     let string = '';
     if (this.charge === 0) {
-      string += this.inOrganicSubset() ? this.elements[0] : `[${this.elements.join('')}]`;
+      string += this.inOrganicSubset() ? Array.from(this.elements.keys())[0] : `[${this.getElementString()}]`;
     } else {
       const charge = chargeToString(this.charge);
-      string += this.inOrganicSubset() ? `[${this.elements[0]}${charge}]` : `[${this.elements.join('')}${charge}]`;
+      string += this.inOrganicSubset() ? `[${Array.from(this.elements.keys())[0]}${charge}]` : `[${this.getElementString()}${charge}]`;
+    }
+    return string;
+  }
+
+  /** To fancy string e.g. "[NH4+]" -> (NH<sub>4</sub>)<sup>+</sup> */
+  public toStringFancy(): string {
+    let string = this.getElementString(true);
+    if (this.elements.size > 1) string = "(" + string + ")";
+    if (this.charge !== 0) {
+      const charge = chargeToString(this.charge);
+      string += "<sup>" + charge + "</sup>";
     }
     return string;
   }
@@ -83,6 +135,7 @@ export class Group {
     let string = "#" + this.ID + ":"
     string += this.toString();
     string += " ^" + this.chainDepth;
+    if (this.ringDigits.length !== 0) string += ' %' + this.ringDigits.join('%')
     if (this.bonds.length > 0) {
       const lim = this.bonds.length;
       for (let i = 0; i < lim; i++) {
