@@ -1,34 +1,35 @@
+import { BondType, IBond } from "../types/Bonds";
+import { IGroupStrMap, IMatchAtom } from "../types/Group";
 import { createGenerateSmilesStackItemObject, IAtomCount, ICountAtoms, IElementToIonMap, IGenerateSmilesStackItem } from "../types/SMILES";
 import { assembleEmpiricalFormula, assembleMolecularFormula, extractElement, extractInteger, numstr, _regexNum } from "../utils";
 import { Group } from "./Group";
 
 export class Molecule {
-  private _groups: { [id: number]: Group };
-  ;
+  public groups: { [id: number]: Group };
 
   constructor();
   constructor(groups: Group[]);
   constructor(groups: { [id: number]: Group });
   constructor(groups?: | Group[] | { [id: number]: Group }) {
     if (groups === undefined) {
-      this._groups = {};
+      this.groups = {};
     } else if (Array.isArray(groups)) {
-      this._groups = groups.reduce((obj, group) => {
+      this.groups = groups.reduce((obj, group) => {
         obj[group.ID] = group;
         return obj;
       }, {});
     } else {
-      this._groups = groups;
+      this.groups = groups;
     }
   }
 
   /** Calculate Mr for a compound */
   public calculateMr() {
-    const stack: number[] = [+Object.keys(this._groups)[0]];
+    const stack: number[] = [+Object.keys(this.groups)[0]];
     const done = new Set<number>();
     let Mr = 0;
     while (stack.length !== 0) {
-      const id = stack.pop(), group = this._groups[id];
+      const id = stack.pop(), group = this.groups[id];
       if (!done.has(id)) {
         done.add(id);
         Mr += group.calculateMr();
@@ -38,6 +39,37 @@ export class Molecule {
       }
     }
     return Mr;
+  }
+
+  /** Get all bonds to/from a group ID (.dest is group groupID is bonded to) */
+  public getAllBonds(groupID: number) {
+    const bonds: IBond[] = this.groups[groupID].bonds.map(bond => ({ ...bond }));
+    for (const gid in this.groups) {
+      if (+gid === groupID) continue;
+      this.groups[gid].bonds.forEach(bond => {
+        if (bond.dest === groupID) {
+          const nbond = { ...bond };
+          nbond.dest = +gid;
+          bonds.push(nbond);
+        }
+      });
+    }
+    return bonds;
+  }
+
+  /** Return array of matching recIDs if match. */
+  // TODO Multiple of same chain from single atom, not only in top-most atom? (e.g. OCO) 
+  public matchMolecule(thing: IMatchAtom, matchMany = true): IGroupStrMap[] {
+    const matches: IGroupStrMap[] = [];
+    for (const gid in this.groups) {
+      const rec: IGroupStrMap = {};
+      let match = this.groups[gid].matchAtoms(thing, this, rec, true);
+      if (match) {
+        matches.push(rec);
+        if (!matchMany) return matches;
+      }
+    }
+    return matches;
   }
 
   /**
@@ -52,9 +84,9 @@ export class Molecule {
     opts.ignoreCharge ??= false;
 
     let atoms: IAtomCount[] = [], elementsPos: string[] = [];
-    for (const id in this._groups) {
-      if (this._groups.hasOwnProperty(id)) {
-        const group = this._groups[id], groupCharge = opts.ignoreCharge ? 0 : group.charge;
+    for (const id in this.groups) {
+      if (this.groups.hasOwnProperty(id)) {
+        const group = this.groups[id], groupCharge = opts.ignoreCharge ? 0 : group.charge;
         if (opts.splitGroups) {
           group.elements.forEach((count, element) => {
             let chargeStr = element + '{' + groupCharge + '}', i = elementsPos.indexOf(chargeStr);
@@ -183,10 +215,10 @@ export class Molecule {
     let elements: Map<string, number>[] = []; // Array of elements for each group
     const stack: number[] = []; // Stack of IDs to this._group (or NaN if done)
     const doneGroups = new Set<number>(); // Set of group IDs which have been done
-    stack.push(+Object.keys(this._groups)[0]);
+    stack.push(+Object.keys(this.groups)[0]);
 
     while (stack.length !== 0) {
-      const i = stack.length - 1, group = this._groups[stack[i]];
+      const i = stack.length - 1, group = this.groups[stack[i]];
       if (isNaN(stack[i]) || doneGroups.has(group.ID)) {
         stack.splice(i, 1);
       } else {
@@ -194,8 +226,8 @@ export class Molecule {
         groupElements.set(group.toStringFancy(), 1);
         for (let j = group.bonds.length - 1; j >= 0; j--) {
           const bond = group.bonds[j];
-          if (!doneGroups.has(bond.dest) && this._groups[bond.dest].bonds.length === 0) {
-            let el = this._groups[bond.dest].toStringFancy();
+          if (!doneGroups.has(bond.dest) && this.groups[bond.dest].bonds.length === 0) {
+            let el = this.groups[bond.dest].toStringFancy();
             groupElements.set(el, (groupElements.get(el) ?? 0) + 1);
             doneGroups.add(bond.dest);
           }
@@ -205,10 +237,10 @@ export class Molecule {
         stack[i] = NaN;
         doneGroups.add(group.ID);
       }
+    
     }
-
     let string = '', lastSegment: string, segCount = 0;
-    elements.forEach(map => {
+    elements.forEach((map, ei) => {
       let j = 0, segStr = '';
       map.forEach((count, el) => {
         let str = count === 1 ? el : el + (html ? "<sub>" + numstr(count) + "</sub>" : count.toString());
@@ -216,6 +248,7 @@ export class Molecule {
         j++;
         segStr += str;
       });
+      // if (ei > 0 && ei < elements.length - 1 && map.size > 1) segStr = "(" + segStr + ")";
       if (collapseSucecssiveGroups) {
         if (lastSegment === undefined) {
           lastSegment = segStr;
@@ -249,10 +282,10 @@ export class Molecule {
     const stack: number[] = []; // Stack of IDs to this._group (or NaN if done)
     const doneGroups = new Set<number>(); // Set of group IDs which have been done
     let hasC = false; // Has a carbon atom?
-    stack.push(+Object.keys(this._groups)[0]);
+    stack.push(+Object.keys(this.groups)[0]);
 
     while (stack.length !== 0) {
-      const i = stack.length - 1, group = this._groups[stack[i]];
+      const i = stack.length - 1, group = this.groups[stack[i]];
       if (isNaN(stack[i]) || doneGroups.has(group.ID)) {
         stack.splice(i, 1);
       } else {
@@ -262,7 +295,7 @@ export class Molecule {
         }
 
         for (let j = group.bonds.length - 1; j >= 0; j--) {
-          const bond = group.bonds[j], bondedGroup = this._groups[bond.dest], isC = group.isElement("C");
+          const bond = group.bonds[j], bondedGroup = this.groups[bond.dest], isC = group.isElement("C");
           if (isC && !hasC) hasC = true;
           // Alkene/Alkyne
           group.bonds.forEach(bond => {
@@ -284,7 +317,7 @@ export class Molecule {
 
           // Ketone / Aldehyde
           else if (bond.bond === "=" && ((group.isElement("C") && bondedGroup.isElement("O")) || (group.isElement("O") && bondedGroup.isElement("C")))) {
-            const hasH = group.bonds.some(bond => this._groups[bond.dest].isElement("H"));
+            const hasH = group.bonds.some(bond => this.groups[bond.dest].isElement("H"));
             addFGroups(hasH ? "aldehyde" : "ketone", { pos: group.smilesStringPosition, symbol: hasH ? "C(H)=O" : "C=O" });
           }
 
@@ -316,7 +349,8 @@ export class Molecule {
 
     let smiles = '';
     const stack: IGenerateSmilesStackItem[] = [];
-    stack.push(createGenerateSmilesStackItemObject(+Object.keys(this._groups)[0])); // Add root group
+    const doneGroups = new Set<number>();
+    stack.push(createGenerateSmilesStackItemObject(+Object.keys(this.groups)[0])); // Add root group
 
     while (stack.length !== 0) {
       const i = stack.length - 1;
@@ -332,21 +366,26 @@ export class Molecule {
         }
         stack.splice(i, 1);
       } else {
-        const group = this._groups[stack[i].group];
+        const group = this.groups[stack[i].group];
+        if (doneGroups.has(group.ID)) {
+          stack[i].handled = true;
+        } else {
+          // Shall we render this?
+          const render = !group.isImplicit || (group.isImplicit && showImplicits);
+          if (render) {
+            stack[i].smiles += stack[i].bond && stack[i].bond !== '-' ? stack[i].bond : '';
+            stack[i].smiles += group.toString();
+            if (group.ringDigits.length !== 0) stack[i].smiles += group.ringDigits.map(n => '%' + n).join('');
+          }
+          stack[i].handled = true;
 
-        // Shall we render this?
-        const render = !group.isImplicit || (group.isImplicit && showImplicits);
-        if (render) {
-          stack[i].smiles += stack[i].bond && stack[i].bond !== '-' ? stack[i].bond : '';
-          stack[i].smiles += group.toString();
-          if (group.ringDigits.length !== 0) stack[i].smiles += group.ringDigits.map(n => '%' + n).join('');
-        }
-        stack[i].handled = true;
+          // Bonds (add in reverse as topmost is processed first)
+          for (let j = group.bonds.length - 1; j >= 0; j--) {
+            const obj = group.bonds[j];
+            stack.push(createGenerateSmilesStackItemObject(obj.dest, i, obj.bond));
+          }
 
-        // Bonds (add in reverse as topmost is processed first)
-        for (let j = group.bonds.length - 1; j >= 0; j--) {
-          const obj = group.bonds[j];
-          stack.push(createGenerateSmilesStackItemObject(obj.dest, i, obj.bond));
+          doneGroups.add(group.ID);
         }
       }
     }

@@ -189,7 +189,6 @@ export function parseInorganicString(str: string): IParseInorganicString {
     }
   }
   info.endIndex = i;
-  console.log(info)
   return info;
 }
 

@@ -1,5 +1,5 @@
 import type { Group } from "../classes/Group";
-import type { IBond } from "./Bonds";
+import type { BondType, IBond } from "./Bonds";
 
 export interface IGroupInformation {
   elements?: Map<string, number>;
@@ -13,4 +13,16 @@ export const createGroupInfoObject = (): IGroupInformation => ({ elements: new M
 
 export interface IGroupMap {
   [id: number]: Group;
+}
+
+export interface IGroupStrMap {
+  [id: string]: Group;
+}
+
+export interface IMatchAtom {
+  atom: string | string[];
+  charge?: number;
+  bond?: BondType;
+  bondedTo?: IMatchAtom[];
+  rec?: string | number; // Record as this ID ... in recorded dict
 }

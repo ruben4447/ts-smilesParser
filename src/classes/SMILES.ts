@@ -9,19 +9,11 @@ import { Molecule } from "./Molecule";
 import Ring from "./Rings";
 
 export class SMILES {
-  private _canvas: HTMLCanvasElement;
-  private _ctx: CanvasRenderingContext2D;
-
   private _smilesString: string = '';
   private _groups: IGroupMap;
   public parseOptions: IParseOptions = createParseOptionsObject();
   private _openRings: IRingMap; // What rings are open? This index corresponds to the ring digits
   private _rings: Ring[];
-
-  public constructor(canvas: HTMLCanvasElement) {
-    this._canvas = canvas;
-    this._ctx = canvas.getContext("2d");
-  }
 
   public getSMILESstring(): string { return this._smilesString; }
   public setSMILESstring(string: string) { this._smilesString = string; }
@@ -44,6 +36,11 @@ export class SMILES {
       try {
         if (this.parseOptions.checkBondCount) this.checkBondCounts(); // Check bond counts
         this._checkOpenRings();
+        // Create bonds between ring ends
+        this._rings.forEach(ring => {
+          this._groups[ring.members[0]].addBond(ring.isAromatic ? ':' : '-', this._groups[arrFromBack(ring.members)]);
+        });
+
       } catch (e) {
         if (e instanceof AdvError) {
           let col = e.columnNumber;
@@ -288,12 +285,6 @@ export class SMILES {
       //#endregion
     }
 
-    // Create bonds between ring ends
-    this._checkOpenRings();
-    this._rings.forEach(ring => {
-      groups[ring.members[0]].addBond('-', groups[arrFromBack(ring.members)]);
-    });
-
     // Add to global collection
     groups.forEach(g => this._groups[g.ID] = g);
   }
@@ -385,6 +376,7 @@ export class SMILES {
         const ring = this._openRings[digit];
         if (ring !== undefined) {
           const openingGroup = this._groups[ring.members[0]];
+          console.log(openingGroup)
           throw new AdvError(`Ring Error: unclosed ring '${ring.digit}'`, this._smilesString.substr(openingGroup.smilesStringPosition)).setColumnNumber(openingGroup.smilesStringPosition);
         }
       }
@@ -476,53 +468,12 @@ export class SMILES {
   // }
 
   /** Generate SMILES string from parsed data.
+   * @param molecules - Generate SMILES from provided array of molecules. If not provided, molecules = this.getMolecules()
    * @param showImplicits - Render implicit groups? (if .isImplicit === true)
   */
-  public generateSMILES(showImplicits = false): string {
-    /** Assemble and return SMILES string from a StackItem */
-    const assembleSMILES = (item: IGenerateSmilesStackItem): string => {
-      item.smilesChildren = item.smilesChildren.filter(x => x.length > 0);
-      let lastChild = item.smilesChildren.pop();
-      return item.smiles + item.smilesChildren.map(x => `(${x})`).join('') + (lastChild || '');
-    };
-
-    let smiles = '';
-    const stack: IGenerateSmilesStackItem[] = [];
-    stack.push(createGenerateSmilesStackItemObject(+Object.keys(this._groups)[0])); // Add root group
-
-    while (stack.length !== 0) {
-      const i = stack.length - 1;
-      if (stack[i].handled) {
-        // Handled; remove from array
-        if (stack[i].parent !== undefined) {
-          let j = stack[i].parent;
-          // stack[j].smiles += "(" + stack[i].smiles + ")";
-          stack[j].smilesChildren.push(assembleSMILES(stack[i]));
-        } else {
-          // smiles = stack[i].smiles + smiles;
-          smiles = assembleSMILES(stack[i]) + smiles;
-        }
-        stack.splice(i, 1);
-      } else {
-        const group = this._groups[stack[i].group];
-
-        // Shall we render this?
-        const render = !group.isImplicit || (group.isImplicit && showImplicits);
-        if (render) {
-          stack[i].smiles += stack[i].bond && stack[i].bond !== '-' ? stack[i].bond : '';
-          stack[i].smiles += group.toString();
-          if (group.ringDigits.length !== 0) stack[i].smiles += group.ringDigits.map(n => '%' + n).join('');
-        }
-        stack[i].handled = true;
-
-        // Bonds (add in reverse as topmost is processed first)
-        for (let j = group.bonds.length - 1; j >= 0; j--) {
-          const obj = group.bonds[j];
-          stack.push(createGenerateSmilesStackItemObject(obj.dest, i, obj.bond));
-        }
-      }
-    }
-    return smiles;
+  public generateSMILES(molecules?: Molecule[], showImplicits = false): string {
+    if (molecules === undefined) molecules = this.getMolecules();
+    return molecules.map(mol => mol.generateSMILES()).join(".");
   }
 }
 

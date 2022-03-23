@@ -1,3 +1,6 @@
+import type { Molecule } from "../classes/Molecule";
+import { IGroupStrMap } from "./Group";
+
 export interface IExtractBetweenInformation {
   input: string;
   startIndex: number;
@@ -17,4 +20,22 @@ export interface IParseInorganicString {
 export interface IParseDigitString {
   digits: number[];
   endIndex: number;
+}
+
+export interface IMoleculeType {
+  repr: string;
+  name: string;
+  eg: { smiles: string, name: string }; // Smiles example
+  variantOf?: number;
+  // TODO: implement below feature:
+  removeIfPresent?: number[]; // Groups to remove if this is present (from same carbon, rec id 1)
+  test?: (molecule: Molecule) => IGroupStrMap[];
+  // react?: (molecule: Molecule, groups: IGroupStrMap[]) => void;
+}
+
+export interface IReactionInfo {
+  start: number;
+  end: number;
+  reagents: string;
+  conditions: string;
 }

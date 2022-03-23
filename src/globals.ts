@@ -1,10 +1,12 @@
-import type { Environment } from "./classes/Environment";
+import type { SMILES } from "./classes/SMILES";
+import type { Tabs } from "./classes/Tabs";
 
 export interface IGlobals {
-  env: Environment;
+  env: SMILES;
   error: Error | null;
   useHillSystem: boolean;
   canvas: HTMLCanvasElement;
+  tabs: Tabs;
 }
 
 const globals: IGlobals = {
@@ -12,6 +14,7 @@ const globals: IGlobals = {
   error: null,
   useHillSystem: true,
   canvas: undefined,
+  tabs: undefined
 };
 
 export default globals;

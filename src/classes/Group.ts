@@ -1,8 +1,9 @@
 import { masses, organicSubset, symbols } from "../data-vars";
 import { BondType, IBond } from "../types/Bonds";
 import { IAtomCount } from "../types/SMILES";
-import { IGroupInformation } from "../types/Group";
+import { IGroupInformation, IGroupStrMap, IMatchAtom } from "../types/Group";
 import { chargeToString, getBondNumber, numstr } from "../utils";
+import type { Molecule } from "./Molecule";
 
 var ID = 0; // Next ID
 export const resetGroupID = () => ID = 0;
@@ -113,6 +114,49 @@ export class Group {
         atoms[i].count += count;
       });
       return atoms;
+    }
+  }
+
+  /** Return boolean: does this match an IMatchAtom? */
+  public matchAtom(atom: IMatchAtom) {
+    return (Array.isArray(atom.atom) ? this.isElement(...atom.atom) : this.isElement(atom.atom)) && (atom.charge === undefined || atom.charge === this.charge);
+  }
+
+  /** Return true if all branches provided are present from this group */
+  public matchAtoms(toMatch: IMatchAtom, molecule: Molecule, recorded?: IGroupStrMap, scanAllBonds = true, exploredGroups?: Set<number>) {
+    toMatch.bondedTo ??= [];
+    recorded ??= {};
+    exploredGroups ??= new Set();
+    exploredGroups.add(this.ID);
+
+    let matches = 0;
+    if (this.matchAtom(toMatch)) {
+      if (toMatch.bondedTo.length === 0) {
+        if (toMatch.rec !== undefined) recorded[toMatch.rec] = this;
+        matches++;
+        return true;
+      } else {
+        const exploredBonds = new Set<number>();
+        const bonds = scanAllBonds ? molecule.getAllBonds(this.ID) : this.bonds;
+        for (const matchNext of toMatch.bondedTo) {
+          for (let i = 0; i < bonds.length; ++i) {
+            if (exploredBonds.has(i)) continue;
+            if (matchNext.bond === undefined || matchNext.bond === bonds[i].bond) {
+              let set = new Set(exploredGroups);
+              set.add(bonds[i].dest);
+              if (!exploredGroups.has(bonds[i].dest) && molecule.groups[bonds[i].dest].matchAtoms(matchNext, molecule, recorded, scanAllBonds, set)) {
+                exploredBonds.add(i);
+                if (toMatch.rec !== undefined) recorded[toMatch.rec] = this;
+                matches++;
+                break;
+              }  
+            }
+          }
+        }
+      }
+      return matches >= toMatch.bondedTo.length;
+    } else {
+      return false;
     }
   }
 
