@@ -94,6 +94,10 @@ export class SMILES {
         currentBondPos = pos;
         pos++;
         if (pos >= smiles.length) throw new AdvError(`Syntax Error: invalid bond '${currentBond}': unexpected end-of-input after bond`, currentBond).setColumnNumber(pos - 1);
+        if (currentBond === ':') {
+          if (Object.keys(this._openRings).length === 0) throw new AdvError(`Bond Error: aromatic bond '${currentBond}' only valid in rings`, currentBond).setColumnNumber(pos - 1);
+          for (const rid in this._openRings) this._openRings[rid].isAromatic = true;
+        }
       }
       //#endregion
 
@@ -240,7 +244,7 @@ export class SMILES {
       //#endregion
 
       // #region Bonding
-      if (dontBondNext && this.parseOptions.enableSeperatedStructures) {
+      if (dontBondNext) {
         if (currentBond) throw new AdvError(`Bond Error: attempted to create bond between seperatured structures`, currentBond).setColumnNumber(currentBondPos);
         dontBondNext = false;
       } else {
@@ -283,6 +287,12 @@ export class SMILES {
       }
       //#endregion
     }
+
+    // Create bonds between ring ends
+    this._checkOpenRings();
+    this._rings.forEach(ring => {
+      groups[ring.members[0]].addBond('-', groups[arrFromBack(ring.members)]);
+    });
 
     // Add to global collection
     groups.forEach(g => this._groups[g.ID] = g);

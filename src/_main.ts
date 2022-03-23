@@ -57,11 +57,11 @@ function _main() {
 
   env = new SMILES(canvas);
   $globals.env = env;
-  env.parseOptions.addImplicitHydrogens = true;
+  env.parseOptions.addImplicitHydrogens = !true;
   env.parseOptions.checkBondCount = false;
   env.parseOptions.enableRings = true;
   inputBoolOption.checked = env.parseOptions[selectBoolOption.value];
-  parseSmiles("C(=O)O.Br");
+  parseSmiles("C1:C:C:C:C:C1");
   // parseSmiles("CBr");
   // parseSmiles("C1C(=O)CC1");
   // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");

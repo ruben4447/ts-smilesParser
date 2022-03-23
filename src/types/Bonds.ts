@@ -1,4 +1,4 @@
-export type BondType = "-" | "=" | "#";
+export type BondType = "-" | "=" | "#" | ":";
 
 export interface IBond {
   bond: BondType;
