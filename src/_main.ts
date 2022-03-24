@@ -4,7 +4,7 @@ globalThis.utils = utils;
 import * as dataVars from './data-vars';
 globalThis.dataVars = dataVars;
 import $globals from './globals';
-import { moleculeTypes } from './organic';
+import { moleculeTypes, reactions } from './organic';
 import { Tabs } from './classes/Tabs';
 import { Molecule } from './classes/Molecule';
 import { IGroupStrMap } from './types/Group';
@@ -33,7 +33,8 @@ function _main() {
   document.body.appendChild(tabContainer);
 
   // parseSmiles("C1:C:C:C:C:C1");
-  parseSmiles("CC(=O)N");
+  // parseSmiles("C=CC(=O)C");
+  parseSmiles("C=C");
   // parseSmiles("C1C(=O)CC1");
   // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
 }
@@ -115,9 +116,30 @@ function generateAnalyseMoleculeContent() {
       const groups = moleculeTypes[id].test ? moleculeTypes[id].test(molecule) : [];
       if (groups.length !== 0) {
         const li = document.createElement("li");
-        li.innerText = moleculeTypes[id].name;
+        li.insertAdjacentHTML("beforeend", `<span>${moleculeTypes[id].name}</span><br>`);;
         fgul.appendChild(li);
-        
+        const ul = document.createElement("ul");
+        li.appendChild(ul);
+        reactions.forEach((info, i) => {
+          if (info.start === +id) {
+            const li = document.createElement("li");
+            li.insertAdjacentHTML("beforeend", `<span> &rarr; ${moleculeTypes[info.end].name}</span> &nbsp;`);
+            const btn = document.createElement("button");
+            btn.addEventListener("click", () => {
+              if (confirm(`Carry out reaction ${moleculeTypes[info.start].name} -> ${moleculeTypes[info.end].name} ?${info.name ? '\nReaction Name: ' + info.name : ''}${info.type ? '\nReaction Mechanism: ' + info.type : ''}${info.conditions ? '\nConditions: ' + info.conditions : ''}${info.reagents ? '\nReagents: ' + info.reagents : ''}`)) {
+                let ok = info.react ? info.react(molecule, organicGroups[+id]) : false;
+                if (ok) {
+                  analyse();
+                } else {
+                  alert(`Reaction failed.`);
+                }
+              }
+            });
+            btn.innerText = "Go";
+            li.appendChild(btn);
+            ul.appendChild(li);
+          }
+        });
         organicGroups[id] = groups;
       }
     }
@@ -163,9 +185,11 @@ function generateFunctionalGroupsContent() {
     const data = moleculeTypes[id];
     const div = document.createElement("div");
     container.appendChild(div);
-    div.insertAdjacentHTML("beforeend", `<h3>${data.name}</h3>`);
+    div.insertAdjacentHTML("beforeend", `<h2>${data.name}</h2>`);
     if (data.variantOf !== undefined) div.insertAdjacentHTML("beforeend", `<em>Variant Of ${moleculeTypes[data.variantOf].name}</em><br>`);
     div.insertAdjacentHTML("beforeend", `<img type="image/png" src="img/${data.repr}.png" />`);
+
+    // EXAMPLE MOLECULE
     div.insertAdjacentHTML("beforeend", `<br>Example: <var>${data.eg.name}</var>, <code>${data.eg.smiles}</code> `);
     let btnEg = document.createElement("button");
     btnEg.innerText = "(View)";
@@ -174,6 +198,26 @@ function generateFunctionalGroupsContent() {
       parseSmiles(data.eg.smiles);
     });
     div.appendChild(btnEg);
+    div.insertAdjacentHTML("beforeend", "<br><br>");
+
+    // TABLE OF REACTIONS
+    const ourReactions = reactions.filter(r => r.start === +id);
+    if (ourReactions.length > 0) {
+      const table = document.createElement("table"), tbody = table.createTBody();
+      table.insertAdjacentHTML("afterbegin", `<thead><tr><th colspan='5'>Reactions: ${utils.numstr(ourReactions.length)}</th></tr><tr><th>Reaction</th><th>Name</th><th>Mechanism</th><th>Reagents</th><th>Conditions</th></tr></thead>`);
+      div.appendChild(table);
+      ourReactions.forEach(reaction => {
+        const tr = document.createElement("tr");
+        tbody.appendChild(tr);
+        tr.insertAdjacentHTML("beforeend", `<td>${moleculeTypes[reaction.start].name} &rarr; ${moleculeTypes[reaction.end].name}`);
+        tr.insertAdjacentHTML("beforeend", `<td>${reaction.name ?? ''}</td>`);
+        tr.insertAdjacentHTML("beforeend", `<td>${reaction.type ?? ''}</td>`);
+        tr.insertAdjacentHTML("beforeend", `<td>${reaction.reagents ?? ''}</td>`);
+        tr.insertAdjacentHTML("beforeend", `<td>${reaction.conditions ?? ''}</td>`);
+      });
+    }
+
+    div.insertAdjacentHTML("beforeend", "<hr>");
   }
 
   return container;

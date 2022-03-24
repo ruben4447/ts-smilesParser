@@ -1,4 +1,3 @@
-import { IGroupStrMap } from "./types/Group";
 import { IMoleculeType, IReactionInfo } from "./types/utils";
 
 export const moleculeTypes: { [id: number]: IMoleculeType } = {
@@ -12,7 +11,7 @@ export const moleculeTypes: { [id: number]: IMoleculeType } = {
     repr: "alkene",
     name: "Alkene",
     eg: { smiles: "C=C", name: "ethene" },
-    test: mol => mol.matchMolecule({ atom: "C", rec: 1, bondedTo: [{ atom: "C", bond: "=" }] }),
+    test: mol => mol.matchMolecule({ atom: "C", rec: 1, bondedTo: [{ atom: "C", bond: "=", rec: 2 }] }),
   },
   3: {
     repr: "alcohol",
@@ -164,4 +163,198 @@ export const moleculeTypes: { [id: number]: IMoleculeType } = {
   },
 };
 
-export const reactions: { [rid: number]: IReactionInfo} = {};
+export const reactions: IReactionInfo[] = [
+  {
+    name: "Hydrogenation",
+    start: 2,
+    end: 1,
+    reagents: "H2/Ni",
+    conditions: "150C",
+    react: (mol, groups) => {
+      // Replace with single bond
+      // const bond = groups[1].
+    }
+  },
+  {
+    name: "Halogenation",
+    type: "electrophilic addition",
+    start: 2,
+    end: 23,
+    reagents: "HX",
+  },
+  {
+    name: "Halogenation",
+    type: "electrophilic addition",
+    start: 2,
+    end: 23,
+    reagents: "X2",
+  },
+  {
+    name: "Halogenation",
+    start: 1,
+    end: 23,
+    reagents: "X2",
+    conditions: "UV",
+  },
+  {
+    type: "nucleophilic substitution",
+    start: 23,
+    end: 7,
+    reagents: "CN{-}/ethanol",
+    conditions: "reflux"
+  },
+  {
+    type: "nucleophilic substitution",
+    start: 23,
+    end: 8,
+    reagents: "conc NH3/ethanol",
+    conditions: "heat"
+  },
+  {
+    name: "Reduction",
+    start: 7,
+    end: 8,
+    reagents: "H2/Ni",
+    conditions: "heat/pressure"
+  },
+  {
+    name: "Hydration",
+    start: 2,
+    end: 3,
+    reagents: "H2O(g)/H3PO4",
+    conditions: "heat/pressure"
+  },
+  {
+    name: "Dehydration",
+    start: 3,
+    end: 2,
+    reagents: "conc H3PO4"
+  },
+  {
+    name: "Oxidation",
+    start: 5,
+    end: 12,
+    reagents: "K2Cr2O7/H2SO4",
+    conditions: "reflux"
+  },
+  {
+    name: "Reduction",
+    start: 12,
+    end: 5,
+    reagents: "NaBH4 or AlLiH4",
+    conditions: "ethanol or dry ether"
+  },
+  {
+    name: "Oxidation",
+    start: 4,
+    end: 13,
+    reagents: "K2CR2O7/H2SO4",
+    conditions: "distill"
+  },
+  {
+    name: "Reduction",
+    start: 13,
+    end: 4,
+    reagents: "NaBH4 or AlLiH4",
+    conditions: "ethanol or dry ether"
+  },
+  {
+    name: "Oxidation",
+    start: 4,
+    end: 14,
+    reagents: "K2Cr2O7/H2SO4",
+    conditions: "reflux"
+  },
+  {
+    type: "nucleophilic addition",
+    start: 12,
+    end: 15,
+    reagents: "NaCN(aq)/H{+}(aq)",
+  },
+  {
+    name: "Hydrolysis",
+    start: 7,
+    end: 14,
+    reagents: "H2O/HCl",
+  },
+  {
+    name: "Hydrolysis",
+    start: 15,
+    end: 14,
+    reagents: "H2O/HCl",
+  },
+  {
+    name: "Esterification",
+    start: 3,
+    end: 16,
+    reagents: "Carboxylic acid/conc H2SO4 or acid anhydride",
+    conditions: "50C"
+  },
+  {
+    name: "Esterification",
+    start: 14,
+    end: 16,
+    reagents: "alcohol/conc H2SO4",
+    conditions: "50C"
+  },
+  {
+    name: "Hydrolysis",
+    start: 16,
+    end: 14,
+    reagents: "dil HCl",
+    conditions: "reflux"
+  },
+  {
+    name: "Base Hydrolysis",
+    start: 16,
+    end: 17,
+    reagents: "dil HCl",
+    conditions: "reflux"
+  },
+  {
+    name: "Reduction",
+    start: 14,
+    end: 4,
+    reagents: "LiAlH4/HCl",
+    conditions: "dry ether"
+  },
+  {
+    start: 14,
+    end: 18,
+    reagents: "SOCl2",
+  },
+  {
+    name: "Esterification",
+    start: 18,
+    end: 16,
+    reagents: "alcohol",
+    conditions: "cold",
+  },
+  {
+    start: 18,
+    end: 14,
+    reagents: "H2O",
+  },
+  {
+    start: 18,
+    end: 20,
+    reagents: "NH3",
+  },
+  {
+    start: 18,
+    end: 21,
+    reagents: "primary amine",
+  },
+  {
+    name: "Dehydration",
+    start: 14,
+    end: 24,
+    reagents: "carboxylic acid or acid chloride/NaOH",
+  },
+  {
+    start: 9,
+    end: 4,
+    reagents: "HNO2",
+  },
+  // Start again at Reaction ID 28
+];

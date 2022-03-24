@@ -2,6 +2,14 @@ body {
     font-family: Arial, Helvetica, sans-serif;
 }
 
+table, tr, td, th {
+    border: 1px solid black;
+}
+
+table {
+    border-collapse: collapse;
+}
+
 /** === TABS === */
 /*
 * Example CSS stylings for Tabs.ts

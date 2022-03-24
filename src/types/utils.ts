@@ -34,8 +34,11 @@ export interface IMoleculeType {
 }
 
 export interface IReactionInfo {
-  start: number;
-  end: number;
-  reagents: string;
-  conditions: string;
+  name?: string; // Reaction name e.g. "Halogenation"
+  type?: string; // Reaction mechanism e.g. "nucleophilic addition"
+  start: number; // ID of starting molecule type
+  end: number; // ID of ending molecule type
+  reagents?: string; // Reagents of reaction
+  conditions?: string; // Condition of reaction
+  react?: (mol: Molecule, fgroups: IGroupStrMap[]) => void; // Carry out reaction
 }
