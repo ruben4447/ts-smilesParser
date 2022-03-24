@@ -1,5 +1,5 @@
 import type { Molecule } from "../classes/Molecule";
-import { IGroupStrMap } from "./Group";
+import { halogen, IGroupStrMap } from "./Group";
 
 export interface IExtractBetweenInformation {
   input: string;
@@ -40,5 +40,11 @@ export interface IReactionInfo {
   end: number; // ID of ending molecule type
   reagents?: string; // Reagents of reaction
   conditions?: string; // Condition of reaction
-  react?: (mol: Molecule, fgroups: IGroupStrMap[]) => void; // Carry out reaction
+  react?: (mol: Molecule, fgroup: IGroupStrMap, opts: IReactionOpts) => void | string; // Carry out reaction
+  reactOnce?: boolean; // Call .react only once? (default = false)
+}
+
+export interface IReactionOpts {
+  halogen: halogen;
+  addH?: boolean;
 }

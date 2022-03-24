@@ -1,6 +1,8 @@
 import type { Group } from "../classes/Group";
 import type { BondType, IBond } from "./Bonds";
 
+export type halogen = "F" | "Cl" | "Br" | "I";
+
 export interface IGroupInformation {
   elements?: Map<string, number>;
   charge?: number;
@@ -20,7 +22,8 @@ export interface IGroupStrMap {
 }
 
 export interface IMatchAtom {
-  atom: string | string[];
+  atom?: string | string[];
+  notAtom?: string | string[];
   charge?: number;
   bond?: BondType;
   bondedTo?: IMatchAtom[];

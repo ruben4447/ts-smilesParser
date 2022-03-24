@@ -1,5 +1,6 @@
 import type { SMILES } from "./classes/SMILES";
 import type { Tabs } from "./classes/Tabs";
+import { IReactionOpts } from "./types/utils";
 
 export interface IGlobals {
   env: SMILES;
@@ -7,6 +8,7 @@ export interface IGlobals {
   useHillSystem: boolean;
   canvas: HTMLCanvasElement;
   tabs: Tabs;
+  reactionOpts: IReactionOpts;
 }
 
 const globals: IGlobals = {
@@ -14,7 +16,8 @@ const globals: IGlobals = {
   error: null,
   useHillSystem: true,
   canvas: undefined,
-  tabs: undefined
+  tabs: undefined,
+  reactionOpts: { halogen: "Br", addH: true },
 };
 
 export default globals;

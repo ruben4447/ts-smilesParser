@@ -11,6 +11,7 @@ import Ring from "./Rings";
 export class SMILES {
   private _smilesString: string = '';
   private _groups: IGroupMap;
+  public molecules: Molecule[];
   public parseOptions: IParseOptions = createParseOptionsObject();
   private _openRings: IRingMap; // What rings are open? This index corresponds to the ring digits
   private _rings: Ring[];
@@ -24,6 +25,7 @@ export class SMILES {
    */
   public parse() {
     this._groups = {};
+    this.molecules = [];
     this._openRings = {};
     this._rings = [];
     resetGroupID();
@@ -40,7 +42,7 @@ export class SMILES {
         this._rings.forEach(ring => {
           this._groups[ring.members[0]].addBond(ring.isAromatic ? ':' : '-', this._groups[arrFromBack(ring.members)]);
         });
-
+        this.molecules = this.getMolecules();
       } catch (e) {
         if (e instanceof AdvError) {
           let col = e.columnNumber;

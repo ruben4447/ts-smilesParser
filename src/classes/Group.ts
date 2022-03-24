@@ -2,7 +2,7 @@ import { masses, organicSubset, symbols } from "../data-vars";
 import { BondType, IBond } from "../types/Bonds";
 import { IAtomCount } from "../types/SMILES";
 import { IGroupInformation, IGroupStrMap, IMatchAtom } from "../types/Group";
-import { chargeToString, getBondNumber, numstr } from "../utils";
+import { chargeToString, getBondNumber, numstr, parseInorganicString } from "../utils";
 import type { Molecule } from "./Molecule";
 
 var ID = 0; // Next ID
@@ -119,7 +119,7 @@ export class Group {
 
   /** Return boolean: does this match an IMatchAtom? */
   public matchAtom(atom: IMatchAtom) {
-    return (Array.isArray(atom.atom) ? this.isElement(...atom.atom) : this.isElement(atom.atom)) && (atom.charge === undefined || atom.charge === this.charge);
+    return (atom.atom === undefined ? true : Array.isArray(atom.atom) ? this.isElement(...atom.atom) : this.isElement(atom.atom)) && (atom.notAtom === undefined ? true : Array.isArray(atom.notAtom) ? !this.isElement(...atom.notAtom) : !this.isElement(atom.notAtom)) && (atom.charge === undefined || atom.charge === this.charge);
   }
 
   /** Return true if all branches provided are present from this group */
@@ -149,7 +149,7 @@ export class Group {
                 if (toMatch.rec !== undefined) recorded[toMatch.rec] = this;
                 matches++;
                 break;
-              }  
+              }
             }
           }
         }
@@ -197,5 +197,15 @@ export class Group {
       }
     }
     return string;
+  }
+
+  /** Attempt to create group from string: ["elements..."] (don't include square brackets) */
+  public static fromString(str: string) {
+    let info = parseInorganicString(str);
+    if (info.error) return false;
+    const group = new Group();
+    info.elements.forEach((value, key) => group.addElement(key, value));
+    group.charge = info.charge;
+    return group;
   }
 }

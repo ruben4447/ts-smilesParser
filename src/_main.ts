@@ -7,7 +7,7 @@ import $globals from './globals';
 import { moleculeTypes, reactions } from './organic';
 import { Tabs } from './classes/Tabs';
 import { Molecule } from './classes/Molecule';
-import { IGroupStrMap } from './types/Group';
+import { halogen, IGroupStrMap } from './types/Group';
 globalThis.$globals = $globals;
 
 var canvas: HTMLCanvasElement, env: SMILES;
@@ -19,7 +19,7 @@ function _main() {
   env = new SMILES();
   $globals.env = env;
   env.parseOptions.addImplicitHydrogens = true;
-  env.parseOptions.checkBondCount = false;
+  env.parseOptions.checkBondCount = true;
   env.parseOptions.enableRings = true;
 
   const tabContainer = document.createElement('div');
@@ -34,7 +34,7 @@ function _main() {
 
   // parseSmiles("C1:C:C:C:C:C1");
   // parseSmiles("C=CC(=O)C");
-  parseSmiles("C=C");
+  parseSmiles("CCCN");
   // parseSmiles("C1C(=O)CC1");
   // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
 }
@@ -92,6 +92,24 @@ function generateSMILESContent() {
 
 function generateAnalyseMoleculeContent() {
   const container = document.createElement('div');
+
+  // Select main halogen atom
+  const divSetup = document.createElement('div');
+  container.appendChild(divSetup);
+  divSetup.insertAdjacentHTML("beforeend", "<span>Select halogen to be used as <var>X<sub>2</sub></var> and <var>HX</var> in reactions</sp><br><var>X</var> =  &nbsp");
+  const selectHalogen = document.createElement("select");
+  divSetup.appendChild(selectHalogen);
+  ["F", "Cl", "Br", "I"].forEach(halogen => selectHalogen.insertAdjacentHTML("beforeend", `<option value='${halogen}'${$globals.reactionOpts.halogen === halogen ? " selected" : ""}>${halogen}</option>`));
+  selectHalogen.addEventListener("change", () => ($globals.reactionOpts.halogen = selectHalogen.value as halogen));
+
+  // Add hydrogens
+  divSetup.insertAdjacentHTML("beforeend", "<br><span title='If addImplicitHydrogens is enabled, hydrogens will be impliciitly added'>Insert Hydrogens?</span> ");
+  const checkInsertH = document.createElement("input");
+  checkInsertH.type = "checkbox";
+  checkInsertH.checked = $globals.reactionOpts.addH;
+  checkInsertH.addEventListener("click", () => ($globals.reactionOpts.addH = checkInsertH.checked));
+  divSetup.appendChild(checkInsertH);
+
   let molecule: Molecule;
 
   prepAnalyseMolecule = mol => {
@@ -109,7 +127,14 @@ function generateAnalyseMoleculeContent() {
     tbody.insertAdjacentHTML("beforeend", `<tr><th title="Molecular Formula: Actual number of atoms of each element in a molecule">Molecular F.</th><td>${molecule.generateMolecularFormula({}, true)}</td></tr>`);
     tbody.insertAdjacentHTML("beforeend", `<tr><th title="Empirical Formula: Simplest whole number ratio of atoms of each element present in a compound">Empirical F.</th><td>${molecule.generateEmpiricalFormula(true)}</td></tr>`);
     tbody.insertAdjacentHTML("beforeend", `<tr><th title="Structural Formula: The minimal detail that shows the arrangement of atoms in a molecule">Strutural F.</th><td>${molecule.generateCondensedFormula(true, false)}</td></tr>`);
-  
+    let btnLoadSmiles = document.createElement("button");
+    btnLoadSmiles.innerText = "Load SMILES";
+    btnLoadSmiles.addEventListener("click", () => {
+      parseSmiles(molecule.generateSMILES());
+      prepAnalyseMolecule($globals.env.molecules[0]);
+    });
+    p.appendChild(btnLoadSmiles);
+
     fgul.innerHTML = '';
     const organicGroups: { [fgid: number]: IGroupStrMap[] } = [];
     for (const id in moleculeTypes) {
@@ -121,17 +146,30 @@ function generateAnalyseMoleculeContent() {
         const ul = document.createElement("ul");
         li.appendChild(ul);
         reactions.forEach((info, i) => {
-          if (info.start === +id) {
+          if (info.start === +id || moleculeTypes[id].variantOf === info.start) {
             const li = document.createElement("li");
             li.insertAdjacentHTML("beforeend", `<span> &rarr; ${moleculeTypes[info.end].name}</span> &nbsp;`);
             const btn = document.createElement("button");
             btn.addEventListener("click", () => {
               if (confirm(`Carry out reaction ${moleculeTypes[info.start].name} -> ${moleculeTypes[info.end].name} ?${info.name ? '\nReaction Name: ' + info.name : ''}${info.type ? '\nReaction Mechanism: ' + info.type : ''}${info.conditions ? '\nConditions: ' + info.conditions : ''}${info.reagents ? '\nReagents: ' + info.reagents : ''}`)) {
-                let ok = info.react ? info.react(molecule, organicGroups[+id]) : false;
-                if (ok) {
+                let ok: string | void;
+                if (info.react) {
+                  ok = info.react(molecule, organicGroups[+id][0], $globals.reactionOpts);
+                  if (!info.reactOnce && moleculeTypes[id].test) {
+                    while (ok === undefined) {
+                      let groups = moleculeTypes[id].test(molecule);
+                      if (groups.length === 0) break;
+                      ok = info.react(molecule, groups[0], $globals.reactionOpts);
+                    }
+                  }
+                } else {
+                  ok = "Cannot carry out reaction";
+                }
+
+                if (ok === undefined) {
                   analyse();
                 } else {
-                  alert(`Reaction failed.`);
+                  alert("Reaction failed: " + ok);
                 }
               }
             });
@@ -162,7 +200,7 @@ function generateAnalyseMoleculeContent() {
 
   let p = document.createElement("p");
   container.appendChild(p);
-  
+
   container.insertAdjacentHTML("beforeend", "<h3>Functional Groups</h3>");
   const div = document.createElement("div");
   const fgul = document.createElement("ul");
@@ -185,7 +223,7 @@ function generateFunctionalGroupsContent() {
     const data = moleculeTypes[id];
     const div = document.createElement("div");
     container.appendChild(div);
-    div.insertAdjacentHTML("beforeend", `<h2>${data.name}</h2>`);
+    div.insertAdjacentHTML("beforeend", `<h2>${id}: ${data.name}</h2>`);
     if (data.variantOf !== undefined) div.insertAdjacentHTML("beforeend", `<em>Variant Of ${moleculeTypes[data.variantOf].name}</em><br>`);
     div.insertAdjacentHTML("beforeend", `<img type="image/png" src="img/${data.repr}.png" />`);
 
@@ -201,7 +239,7 @@ function generateFunctionalGroupsContent() {
     div.insertAdjacentHTML("beforeend", "<br><br>");
 
     // TABLE OF REACTIONS
-    const ourReactions = reactions.filter(r => r.start === +id);
+    const ourReactions = reactions.filter(r => r.start === +id || moleculeTypes[id].variantOf === r.start);
     if (ourReactions.length > 0) {
       const table = document.createElement("table"), tbody = table.createTBody();
       table.insertAdjacentHTML("afterbegin", `<thead><tr><th colspan='5'>Reactions: ${utils.numstr(ourReactions.length)}</th></tr><tr><th>Reaction</th><th>Name</th><th>Mechanism</th><th>Reagents</th><th>Conditions</th></tr></thead>`);
@@ -252,15 +290,14 @@ function parseSmiles(smiles?: string) {
     return;
   }
 
-  const molecules = env.getMolecules();
 
   // SMILES
-  elOutput.innerHTML += `<b>SMILES</b>: ${env.generateSMILES(molecules)} | Took <em>${utils.numstr(parseTime)}</em> ms | Created ${utils.numstr(molecules.length)} molecule${molecules.length === 1 ? '' : 's'}`;
+  elOutput.innerHTML += `<b>SMILES</b>: ${env.generateSMILES(env.molecules)} | Took <em>${utils.numstr(parseTime)}</em> ms | Created ${utils.numstr(env.molecules.length)} molecule${env.molecules.length === 1 ? '' : 's'}`;
 
   const mdiv = document.createElement("div");
   elOutput.appendChild(mdiv);
 
-  molecules.forEach(molecule => {
+  env.molecules.forEach(molecule => {
     const el = document.createElement("p");
     mdiv.appendChild(el);
 
