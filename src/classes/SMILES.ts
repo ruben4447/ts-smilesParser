@@ -1,6 +1,6 @@
 import { organicSubset } from "../data-vars";
 import { BondType } from "../types/Bonds";
-import { createParseOptionsObject, IParseOptions, IRingMap } from "../types/SMILES";
+import { createParseOptionsObject, createRenderOptsObject, IParseOptions, IRenderOptions, IRingMap } from "../types/SMILES";
 import { arrFromBack, extractBetweenMatching, extractDuplicates, extractElement, isBondChar, parseChargeString, parseDigitString, parseInorganicString, _chargeRegex1, _chargeRegex2, _regexNum } from "../utils";
 import { AdvError } from "./Error";
 import { Group } from "./Group";
@@ -9,6 +9,7 @@ import Ring from "./Rings";
 
 export class SMILES {
   public parseOptions: IParseOptions = createParseOptionsObject();
+  public renderOptions: IRenderOptions = createRenderOptsObject(); // Passed to ParsedSMILES
 
   /**
    * Parse a SMILES string according to this.parseOptions (individual properties mey be overriden by parseOptionsOverride)
@@ -23,6 +24,7 @@ export class SMILES {
     }
 
     const ps = new ParsedSMILES(smiles, parseOptions);
+    ps.renderOptions = this.renderOptions;
 
     try {
       const mainChain: Group[] = [];
@@ -325,6 +327,7 @@ export class ParsedSMILES {
   public molecules: Molecule[];
   public openRings: IRingMap;
   public rings: Ring[];
+  public renderOptions: IRenderOptions; // Options to be used for rendering
 
   constructor(smiles: string, parseOptions: IParseOptions) {
     this.smiles = smiles;
@@ -334,6 +337,7 @@ export class ParsedSMILES {
     this.molecules = [new Molecule()];
     this.openRings = {};
     this.rings = [];
+    this.renderOptions = createRenderOptsObject();
   }
 
   /** Generate SMILES string from parsed data.
@@ -344,7 +348,41 @@ export class ParsedSMILES {
   }
 
   /** Render to a canvas */
-  public render(canvas: HTMLCanvasElement) {
-    
+  public render(renderOptionsOverride?: { [opt: string]: boolean }) {
+    const renderOptions = { ...this.renderOptions };
+    if (renderOptionsOverride) {
+      for (let key in renderOptionsOverride) {
+        renderOptions[key] = renderOptionsOverride[key];
+      }
+    }
+
+    const images: ImageData[] = [];
+    const oc = new OffscreenCanvas(1000, 1000), occtx = oc.getContext("2d");
+    for (const mol of this.molecules) {
+      occtx.clearRect(0, 0, oc.width, oc.height);
+      const image = mol.render(occtx, renderOptions);
+      images.push(image);
+    }
+
+    occtx.fillStyle = renderOptions.bg;
+    occtx.fillRect(0, 0, oc.width, oc.height);
+
+    let P = 3, x = P, y = P, w = x, h = y;
+    for (const image of images) {
+      // Width/height of final image
+      let dy = image.height + 3 * P;
+      h += dy;
+      if (image.width > w) w = image.width;
+      
+      occtx.putImageData(image, w/2 + 2*P - image.width/2, y);
+      if (renderOptions.boxMolecules) {
+        occtx.strokeStyle = "#000000";
+        occtx.strokeRect(0, y, w + P, image.height + 2*P);
+      }
+      y += dy;
+    }
+
+    const image = occtx.getImageData(0, 0, w + P, h);
+    return image;
   }
 }

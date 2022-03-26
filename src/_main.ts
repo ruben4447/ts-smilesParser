@@ -9,7 +9,6 @@ import { Tabs } from './classes/Tabs';
 import { Molecule } from './classes/Molecule';
 import { IGroupStrMap } from './types/Group';
 import { createParseOptionsObject } from './types/SMILES';
-import { defaultRenderMoleculeObject } from './types/Molecule';
 globalThis.$globals = $globals;
 
 var canvas: HTMLCanvasElement, env: SMILES;
@@ -34,7 +33,7 @@ function _main() {
   tabs.open("smiles");
   document.body.appendChild(tabContainer);
 
-  parseSmiles("C(=O)O");
+  parseSmiles("FC(F)(F)S(=O)(=O)O.F");
   // parseSmiles("C=CO");
   // parseSmiles("C1C(=O)CC1");
   // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
@@ -67,8 +66,8 @@ function generateSMILESContent() {
   for (let key in createParseOptionsObject()) {
     opts[key] = { get: () => $globals.env.parseOptions[key], set: (v: boolean) => ($globals.env.parseOptions[key] = v) };
   }
-  opts['renderImplicit'] = { get: () => $globals.renderOpts.renderImplicit, set: (v: boolean) => ($globals.renderOpts.renderImplicit = v) };
-  opts['collapseHydrogens'] = { get: () => $globals.renderOpts.collapseH, set: (v: boolean) => ($globals.renderOpts.collapseH = v) };
+  opts['renderImplicit'] = { get: () => $globals.env.renderOptions.renderImplicit, set: (v: boolean) => ($globals.env.renderOptions.renderImplicit = v) };
+  opts['collapseHydrogens'] = { get: () => $globals.env.renderOptions.collapseH, set: (v: boolean) => ($globals.env.renderOptions.collapseH = v) };
   for (let key in opts) selectBoolOption.insertAdjacentHTML("beforeend", `<option value='${key}'>${key}</option>`);
 
   p.insertAdjacentHTML("beforeend", " <span>=</span> ");
@@ -321,10 +320,12 @@ function parseSmiles(smiles: string) {
   }
   $globals.parsedSMILES = ps;
 
-  ctx.save();
-  ctx.font = "14px Arial";
-  ps.molecules[0].render($globals.canvas, $globals.renderOpts);
-  ctx.restore();
+  const image = ps.render();
+
+   // Get distance from (0,0) such that the molecule is centred
+  let θ = Math.atan2(canvas.width - image.width, canvas.height - image.height);
+  let h = 0.5 * Math.hypot(canvas.height - image.height, canvas.width - image.width);
+  ctx.putImageData(image, h * Math.sin(θ), h * Math.cos(θ));
 
   // SMILES
   elOutput.innerHTML += `<b>SMILES</b>: ${ps.generateSMILES()} | Took <em>${utils.numstr(parseTime)}</em> ms | Created ${utils.numstr(ps.molecules.length)} molecule${ps.molecules.length === 1 ? '' : 's'}`;

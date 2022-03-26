@@ -1,11 +1,10 @@
 import { masses, organicSubset, symbols } from "../data-vars";
 import { BondType, IBond } from "../types/Bonds";
-import { IAtomCount } from "../types/SMILES";
+import { IAtomCount, defaultRenderOptsObject, IRenderOptions } from "../types/SMILES";
 import { IGroupInformation, IGroupStrMap, IMatchAtom } from "../types/Group";
 import { chargeToString, getBondNumber, getTextMetrics, numstr, parseInorganicString } from "../utils";
 import type { Molecule } from "./Molecule";
 import { IVec } from "../types/utils";
-import { createRenderMoleculeObject, defaultRenderMoleculeObject, IRenderMolecule } from "../types/Molecule";
 
 var ID = 0; // Next ID
 export const resetGroupID = () => ID = 0;
@@ -221,9 +220,20 @@ export class Group {
     return group;
   }
 
+  /** Return color overall group would be represented with */
+  public getRenderColor(re?: IRenderOptions) {
+    if (re === undefined) re = defaultRenderOptsObject;
+    let el = Array.from(this.elements.keys())[0];
+    if (this.elements.size === 1 && this.elements.get(el) === 1) {
+      return re.atomColors[el] ?? re.defaultAtomColor;
+    } else {
+      return re.defaultAtomColor;
+    }
+  }
+
   /** If rendered as text, what would the dimensions be? */
-  public getRenderAsTextDimensions(ctx: CanvasRenderingContext2D, re?: IRenderMolecule, extraHs = 0) {
-    if (re === undefined) re = defaultRenderMoleculeObject;
+  public getRenderAsTextDimensions(ctx: OffscreenCanvasRenderingContext2D, re?: IRenderOptions, extraHs = 0) {
+    if (re === undefined) re = defaultRenderOptsObject;
     ctx.font = re.font.toString();
     let elements = new Map(this.elements);
     if (extraHs) elements.set("H", (elements.get("H") ?? 0 + extraHs));
@@ -238,8 +248,8 @@ export class Group {
   }
 
   /** Render as text */
-  public renderAsText(ctx: CanvasRenderingContext2D, pos: IVec, re?: IRenderMolecule, extraHs = 0) {
-    if (re === undefined) re = defaultRenderMoleculeObject;
+  public renderAsText(ctx: OffscreenCanvasRenderingContext2D, pos: IVec, re?: IRenderOptions, extraHs = 0) {
+    if (re === undefined) re = defaultRenderOptsObject;
     ctx.font = re.font.toString();
     let x = pos.x, y = pos.y, elements = new Map(this.elements);
     if (extraHs) elements.set("H", (elements.get("H") ?? 0) + extraHs);

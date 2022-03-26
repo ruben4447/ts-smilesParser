@@ -3,7 +3,7 @@ import { BondType } from "./types/Bonds";
 import { IAtomCount } from "./types/SMILES";
 import { IExtractBetweenInformation, IParseDigitString, IParseInorganicString } from "./types/utils";
 
-export const getTextMetrics = (ctx: CanvasRenderingContext2D, text: string) => {
+export const getTextMetrics = (ctx: OffscreenCanvasRenderingContext2D, text: string) => {
   const metrics = ctx.measureText(text);
   return {
     width: metrics.width,

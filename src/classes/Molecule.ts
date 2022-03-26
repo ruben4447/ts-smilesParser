@@ -1,8 +1,7 @@
 import { organicSubset } from "../data-vars";
 import { IBond } from "../types/Bonds";
 import { IGroupStrMap, IMatchAtom } from "../types/Group";
-import { createRenderMoleculeObject, defaultRenderMoleculeObject, IRenderMolecule } from "../types/Molecule";
-import { createGenerateSmilesStackItemObject, IAtomCount, ICountAtoms, IElementToIonMap, IGenerateSmilesStackItem } from "../types/SMILES";
+import { createGenerateSmilesStackItemObject, IAtomCount, ICountAtoms, IElementToIonMap, IGenerateSmilesStackItem, createRenderOptsObject, defaultRenderOptsObject, IRenderOptions } from "../types/SMILES";
 import { IRec, IVec } from "../types/utils";
 import { assembleEmpiricalFormula, assembleMolecularFormula, extractElement, extractInteger, getBondNumber, numstr, rotateCoords, _regexNum } from "../utils";
 import { AdvError } from "./Error";
@@ -437,9 +436,9 @@ export class Molecule {
   }
 
   /** Return position vectors of each Group around (0,0) */
-  public getGroupPositions(ctx: CanvasRenderingContext2D, re?: IRenderMolecule) {
+  public getGroupPositions(ctx: OffscreenCanvasRenderingContext2D, re?: IRenderOptions) {
     if (Object.keys(this.groups).length === 0) return {};
-    if (re === undefined) re = defaultRenderMoleculeObject;
+    if (re === undefined) re = defaultRenderOptsObject;
 
     const collision = (x: number, y: number) => {
       const vecs = Object.values(posData);
@@ -514,43 +513,50 @@ export class Molecule {
     return posData;
   }
 
-  /** Render molecule to canvas */
-  public render(canvas: HTMLCanvasElement, re?: IRenderMolecule) {
-    const ctx = canvas.getContext("2d");
-
-    if (re === undefined) re = createRenderMoleculeObject();
+  /** Return image of rendered molecule */
+  public render(ctx: OffscreenCanvasRenderingContext2D, re?: IRenderOptions): ImageData {
+    if (Object.values(this.groups).length === 0) return ctx.createImageData(1, 1); // "Empty" image
+    if (re === undefined) re = createRenderOptsObject();
     const positions = this.getGroupPositions(ctx, re), rects = Object.values(positions);
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const rec of rects) {
-      if (rec.x < minX) minX = rec.x;
-      if (rec.x > maxX) maxX = rec.x;
-      if (rec.y < minY) minY = rec.y;
-      if (rec.y > maxY) maxY = rec.y;
+      if (rec.x - rec.w / 2 < minX) minX = rec.x - rec.w / 2;
+      if (rec.x + rec.w / 2 > maxX) maxX = rec.x + rec.w / 2;
+      if (rec.y - rec.h / 2 < minY) minY = rec.y - rec.h / 2;
+      if (rec.y + rec.h / 2 > maxY) maxY = rec.y + rec.h / 2;
     }
+    minX -= re.moleculePadding;
+    maxX += re.moleculePadding;
+    minY -= re.moleculePadding;
+    maxY += re.moleculePadding;
 
-    // Get distance from (0,0) such that the molecule is centred
-    // let d = (Math.hypot(canvas.width, canvas.height) - Math.hypot(maxX - minX, maxY - minY)) / (2*Math.SQRT2);
-    let θ = Math.atan2(canvas.width - (maxX + minX), canvas.height - (maxY + minY));
-    let h = 0.5 * Math.hypot(canvas.height - (maxY + minY), canvas.width - (maxX + minX));
-    let dx = h * Math.sin(θ);
-    let dy = h * Math.cos(θ);
+    // Make sure no coordinate is negative!
+    let dx = Math.abs(minX), dy = Math.abs(minY);
     for (const vec of rects) {
       vec.x += dx;
       vec.y += dy;
     }
 
-    // // Bounding box
-    // ctx.strokeStyle = "yellow";
-    // ctx.strokeRect(minX + dx, minY + dy, maxX - minX, maxY - minY);
+    // Fill background
+    ctx.fillStyle = re.bg;
+    ctx.fillRect(0, 0, maxX - minX, maxY - minY);
 
     // Bonds
-    ctx.strokeStyle = "#000000";
+    ctx.strokeStyle = re.defaultAtomColor;
     ctx.lineWidth = 1;
+    const GSTART = 0.35, GSTOP = 0.65;
     for (const id in positions) {
-      if (positions[id]) {
+      if (positions[id] && !isNaN(positions[id].x) && !isNaN(positions[id].y)) {
+        const c1 = this.groups[id].getRenderColor(re);
         for (const bond of this.groups[id].bonds) {
-          if (positions[bond.dest]) {
+          if (positions[bond.dest] && !isNaN(positions[bond.dest].x) && !isNaN(positions[bond.dest].y)) {
+            const c2 = this.groups[bond.dest].getRenderColor(re);
+
             if (bond.bond === "-" || bond.bond === "#") {
+              let grad = ctx.createLinearGradient(positions[id].x, positions[id].y, positions[bond.dest].x, positions[bond.dest].y);
+              grad.addColorStop(GSTART, c1);
+              grad.addColorStop(GSTOP, c2);
+              ctx.strokeStyle = grad;
               ctx.beginPath();
               ctx.moveTo(positions[id].x, positions[id].y);
               ctx.lineTo(positions[bond.dest].x, positions[bond.dest].y);
@@ -559,10 +565,19 @@ export class Molecule {
             if (bond.bond === "=" || bond.bond === "#") {
               let θ = Math.atan2(positions[bond.dest].y - positions[id].y, positions[bond.dest].x - positions[id].x);
               let x = re.bondGap * Math.sin(θ), y = re.bondGap * Math.cos(θ);
+              let grad = ctx.createLinearGradient(positions[id].x - x, positions[id].y - y, positions[bond.dest].x - x, positions[bond.dest].y - y);
+              grad.addColorStop(GSTART, c1);
+              grad.addColorStop(GSTOP, c2);
+              ctx.strokeStyle = grad;
               ctx.beginPath();
               ctx.moveTo(positions[id].x - x, positions[id].y - y);
               ctx.lineTo(positions[bond.dest].x - x, positions[bond.dest].y - y);
               ctx.stroke();
+
+              grad = ctx.createLinearGradient(positions[id].x + x, positions[id].y + y, positions[bond.dest].x + x, positions[bond.dest].y + y);
+              grad.addColorStop(GSTART, c1);
+              grad.addColorStop(GSTOP, c2);
+              ctx.strokeStyle = grad;
               ctx.beginPath();
               ctx.moveTo(positions[id].x + x, positions[id].y + y);
               ctx.lineTo(positions[bond.dest].x + x, positions[bond.dest].y + y);
@@ -580,5 +595,8 @@ export class Molecule {
       ctx.fillRect(rec.x - rec.w / 2 - P, rec.y - rec.h / 2 - P, rec.w + 2 * P, rec.h + 2 * P);
       group.renderAsText(ctx, { x: rec.x - rec.w / 2, y: rec.y + rec.h * 0.25 }, re, extraHs);
     }
+
+    // Return bounding box
+    return ctx.getImageData(0, 0, maxX - minX, maxY - minY);
   }
 }

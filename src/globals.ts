@@ -1,6 +1,6 @@
 import type { SMILES, ParsedSMILES } from "./classes/SMILES";
 import type { Tabs } from "./classes/Tabs";
-import { createRenderMoleculeObject, IRenderMolecule } from "./types/Molecule";
+import { createRenderOptsObject } from "./types/SMILES";
 import { IReactionOpts } from "./types/utils";
 
 export interface IGlobals {
@@ -11,7 +11,6 @@ export interface IGlobals {
   canvas: HTMLCanvasElement;
   tabs: Tabs;
   reactionOpts: IReactionOpts;
-  renderOpts: IRenderMolecule;
 }
 
 const globals: IGlobals = {
@@ -22,7 +21,6 @@ const globals: IGlobals = {
   canvas: undefined,
   tabs: undefined,
   reactionOpts: { addH: false, primarySide: true },
-  renderOpts: createRenderMoleculeObject(),
 };
 
 export default globals;
