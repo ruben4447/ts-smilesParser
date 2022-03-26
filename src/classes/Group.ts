@@ -2,8 +2,10 @@ import { masses, organicSubset, symbols } from "../data-vars";
 import { BondType, IBond } from "../types/Bonds";
 import { IAtomCount } from "../types/SMILES";
 import { IGroupInformation, IGroupStrMap, IMatchAtom } from "../types/Group";
-import { chargeToString, getBondNumber, numstr, parseInorganicString } from "../utils";
+import { chargeToString, getBondNumber, getTextMetrics, numstr, parseInorganicString } from "../utils";
 import type { Molecule } from "./Molecule";
+import { IVec } from "../types/utils";
+import { createRenderMoleculeObject, defaultRenderMoleculeObject, IRenderMolecule } from "../types/Molecule";
 
 var ID = 0; // Next ID
 export const resetGroupID = () => ID = 0;
@@ -217,5 +219,47 @@ export class Group {
     info.elements.forEach((value, key) => group.addElement(key, value));
     group.charge = info.charge;
     return group;
+  }
+
+  /** If rendered as text, what would the dimensions be? */
+  public getRenderAsTextDimensions(ctx: CanvasRenderingContext2D, re?: IRenderMolecule, extraHs = 0) {
+    if (re === undefined) re = defaultRenderMoleculeObject;
+    ctx.font = re.font.toString();
+    let elements = new Map(this.elements);
+    if (extraHs) elements.set("H", (elements.get("H") ?? 0 + extraHs));
+    let str = Array.from(elements).map(([element, count]) => count === 1 ? element : element + count).join("");
+    if (this.charge !== 0) {
+      let chargeStr = ((this.charge === 1 || this.charge === -1) ? '' : Math.abs(this.charge)) + (this.charge < 0 ? "-" : "+");
+      str = (elements.size === 1 && Array.from(elements.values())[0] === 1) ? str + chargeStr : "[" + str + "]" + chargeStr;
+    }
+    let { width, height } = getTextMetrics(ctx, str);
+    width += re.textPadding * (elements.size - 1);
+    return { width, height };
+  }
+
+  /** Render as text */
+  public renderAsText(ctx: CanvasRenderingContext2D, pos: IVec, re?: IRenderMolecule, extraHs = 0) {
+    if (re === undefined) re = defaultRenderMoleculeObject;
+    ctx.font = re.font.toString();
+    let x = pos.x, y = pos.y, elements = new Map(this.elements);
+    if (extraHs) elements.set("H", (elements.get("H") ?? 0) + extraHs);
+    let brackets = this.charge !== 0 && !(elements.size === 1 && Array.from(elements.values())[0] === 1);
+    const items: { text: string, pos: -1 | 0 | 1, colEquiv?: string }[] = [];
+    if (brackets) items.push({ text: "[", pos: 0 });
+    elements.forEach((count, el) => {
+      items.push({ text: el, pos: 0 });
+      if (count !== 1) items.push({ text: count.toString(), pos: -1, colEquiv: el });
+    });
+    if (brackets) items.push({ text: "]", pos: 0 });
+    if (this.charge !== 0) items.push({ text: ((this.charge === 1 || this.charge === -1) ? '' : Math.abs(this.charge).toString()) + (this.charge < 0 ? "-" : "+"), pos: 1, colEquiv: brackets ? undefined : Array.from(this.elements.keys())[0] });
+
+    items.forEach(({ text, pos, colEquiv }) => {
+      ctx.font = pos === 0 ? re.font.toString() : re.smallFont.toString();
+      let { width, height } = getTextMetrics(ctx, text);
+      ctx.fillStyle = colEquiv === undefined ? (re.atomColors[text] ?? re.defaultAtomColor) : re.atomColors[colEquiv];
+      ctx.fillText(text, x, y - (pos * height * 0.4));
+      x += width;
+    });
+    return { x, y } as IVec;
   }
 }

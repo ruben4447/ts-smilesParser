@@ -260,3 +260,6 @@ export function gcdOfManyNumbers(numbers: number[]): number {
 
 /** Extract duplicates from array */
 export const extractDuplicates = <T>(array: T[]): T[] => array.filter(x => array.indexOf(x) !== array.lastIndexOf(x));
+
+/** Polar to cartesian coordinates around (0,0) */
+export const rotateCoords = (r: number, θ: number) => ([ r * Math.cos(θ), r * Math.sin(θ) ]);

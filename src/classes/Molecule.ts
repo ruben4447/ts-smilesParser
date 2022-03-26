@@ -1,11 +1,13 @@
 import { organicSubset } from "../data-vars";
 import { IBond } from "../types/Bonds";
 import { IGroupStrMap, IMatchAtom } from "../types/Group";
+import { createRenderMoleculeObject, defaultRenderMoleculeObject, IRenderMolecule } from "../types/Molecule";
 import { createGenerateSmilesStackItemObject, IAtomCount, ICountAtoms, IElementToIonMap, IGenerateSmilesStackItem } from "../types/SMILES";
-import { assembleEmpiricalFormula, assembleMolecularFormula, extractElement, extractInteger, getBondNumber, numstr, _regexNum } from "../utils";
+import { IRec, IVec } from "../types/utils";
+import { assembleEmpiricalFormula, assembleMolecularFormula, extractElement, extractInteger, getBondNumber, numstr, rotateCoords, _regexNum } from "../utils";
 import { AdvError } from "./Error";
 import { Group } from "./Group";
-import Ring from "./Rings";
+import { Ring } from "./Rings";
 
 export class Molecule {
   public groups: { [id: number]: Group };
@@ -30,6 +32,7 @@ export class Molecule {
 
   /** Calculate Mr for a compound */
   public calculateMr() {
+    if (Object.values(this.groups).length === 0) return 0;
     const stack: number[] = [+Object.keys(this.groups)[0]];
     const done = new Set<number>();
     let Mr = 0;
@@ -277,6 +280,12 @@ export class Molecule {
     return atoms;
   }
 
+  /** Count number of matching elements given group is bonded to */
+  public countBondedElements(groupID: number, elements: string | string[], includeImplicit = false) {
+    if (typeof elements === "string") elements = [elements];
+    return this.getAllBonds(groupID).filter(bond => (this.groups[bond.dest].isImplicit ? includeImplicit : true) && this.groups[bond.dest].isElement(...elements)).length;
+  }
+
   /**
    * Generate molecular formula
    * e.g. "C2H4O2"
@@ -306,6 +315,8 @@ export class Molecule {
    * @param html - Return formula as HTML?
    */
   public generateCondensedFormula(html = false, collapseSucecssiveGroups = true): string {
+    if (Object.values(this.groups).length === 0) return "";
+
     let elements: Map<string, number>[] = []; // Array of elements for each group
     const stack: number[] = []; // Stack of IDs to this._group (or NaN if done)
     const doneGroups = new Set<number>(); // Set of group IDs which have been done
@@ -364,76 +375,12 @@ export class Molecule {
     return string;
   }
 
-  /** Return array of functional groups */
-  public getFunctionalGroups() {
-    interface Where { pos: number; symbol: string; };
-    const addFGroups = (group: string, where: Where) => {
-      if (fgroups.has(group)) fgroups.get(group).push(where);
-      else fgroups.set(group, [where]);
-    };
-
-    const fgroups = new Map<string, Where[]>();
-    const stack: number[] = []; // Stack of IDs to this._group (or NaN if done)
-    const doneGroups = new Set<number>(); // Set of group IDs which have been done
-    let hasC = false; // Has a carbon atom?
-    stack.push(+Object.keys(this.groups)[0]);
-
-    while (stack.length !== 0) {
-      const i = stack.length - 1, group = this.groups[stack[i]];
-      if (isNaN(stack[i]) || doneGroups.has(group.ID)) {
-        stack.splice(i, 1);
-      } else {
-        // Halogen
-        if (group.isElement("F", "Cl", "Br", "I")) {
-          addFGroups("haloalkane", { pos: group.smilesStringPosition, symbol: group.getElementString() });
-        }
-
-        for (let j = group.bonds.length - 1; j >= 0; j--) {
-          const bond = group.bonds[j], bondedGroup = this.groups[bond.dest], isC = group.isElement("C");
-          if (isC && !hasC) hasC = true;
-          // Alkene/Alkyne
-          group.bonds.forEach(bond => {
-            if (isC && bondedGroup.isElement("C")) {
-              if (bond.bond === "=") addFGroups("alkene", { pos: bond.smilesPosition, symbol: "=" }); // C=C
-              else if (bond.bond === "#") addFGroups("alkyne", { pos: bond.smilesPosition, symbol: "#" }); // C#C
-            }
-          });
-
-          // Alcohol: -OH
-          if ((group.isElement("O") && bondedGroup.isElement("H")) || (group.isElement("H") && bondedGroup.isElement("O"))) {
-            addFGroups("alcohol", { pos: group.smilesStringPosition, symbol: "OH" });
-          }
-
-          // Nitrile: -C#N
-          else if (bond.bond === "#" && ((group.isElement("C") && bondedGroup.isElement("N")) || (group.isElement("N") && bondedGroup.isElement("C")))) {
-            addFGroups("nitrile", { pos: group.smilesStringPosition, symbol: "C#N" });
-          }
-
-          // Ketone / Aldehyde
-          else if (bond.bond === "=" && ((group.isElement("C") && bondedGroup.isElement("O")) || (group.isElement("O") && bondedGroup.isElement("C")))) {
-            const hasH = group.bonds.some(bond => this.groups[bond.dest].isElement("H"));
-            addFGroups(hasH ? "aldehyde" : "ketone", { pos: group.smilesStringPosition, symbol: hasH ? "C(H)=O" : "C=O" });
-          }
-
-          stack.push(bond.dest);
-        }
-        stack[i] = NaN;
-        doneGroups.add(group.ID);
-      }
-    }
-
-    // Remove groups which depend on a carbon
-    if (!hasC) {
-      fgroups.delete("haloalkane");
-    }
-
-    return fgroups;
-  }
-
   /** Generate SMILES string from parsed data.
    * @param showImplicits - Render implicit groups? (if .isImplicit === true)
   */
   public generateSMILES(showImplicits = false): string {
+    if (Object.keys(this.groups).length === 0) return "";
+
     /** Assemble and return SMILES string from a StackItem */
     const assembleSMILES = (item: IGenerateSmilesStackItem): string => {
       item.smilesChildren = item.smilesChildren.filter(x => x.length > 0);
@@ -487,5 +434,151 @@ export class Molecule {
       }
     }
     return smiles;
+  }
+
+  /** Return position vectors of each Group around (0,0) */
+  public getGroupPositions(ctx: CanvasRenderingContext2D, re?: IRenderMolecule) {
+    if (Object.keys(this.groups).length === 0) return {};
+    if (re === undefined) re = defaultRenderMoleculeObject;
+
+    const collision = (x: number, y: number) => {
+      const vecs = Object.values(posData);
+      let w = 20, h = 10;
+      for (const vec of vecs) {
+        if (vec.x < x + w/2 &&
+          vec.x + w/2 > x &&
+          vec.y < y + h/2 &&
+          h/2 + vec.y > y) return vec;
+      }
+      return false;
+    }
+
+    const posData: { [gid: number]: IRec } = {};
+    const processStack: { gid: number, θu: number, θv: number }[] = []; // Groups to process
+    const doneGroups = new Set<number>();
+    let iters = 0;
+    
+    // For each group, populate text width/height
+    for (let id in this.groups) {
+      let { width: w, height: h } = this.groups[+id].getRenderAsTextDimensions(ctx, re, re.collapseH ? this.countBondedElements(+id, "H", re.renderImplicit) : 0);
+      posData[id] = { x: NaN, y: NaN, w, h };
+    }
+
+    // Start with forst group
+    let gid = +Object.keys(this.groups)[0];
+    processStack.push({ gid, θu: 0, θv: 2*Math.PI });
+    posData[gid].x = 0;
+    posData[gid].y = 0;
+
+    while (processStack.length !== 0) {
+      const data = processStack.pop();
+      if (!doneGroups.has(data.gid)) {
+        const rec = posData[data.gid]; // Current position vector
+        // Get bonds
+        let bonds = this.getAllBonds(data.gid);
+        if (!re.renderImplicit) bonds = bonds.filter(bond => !this.groups[bond.dest].isImplicit);
+        else if (re.collapseH) bonds = bonds.filter(bond => !this.groups[bond.dest].isElement("H"));
+
+        let θu = data.θu, θv = data.θv; // Start/end angle
+        let θi = (θv - θu) / (iters === 0 ? bonds.length : bonds.length - 1); // angle increment
+        if (θv < θu) [θu, θv] = [θv, θu];
+        for (let i = 0, θ = θu; i < bonds.length; i++, θ += θi) {
+          let did = bonds[i].dest, θc = θ; // Copy angle
+          if (!doneGroups.has(did)) {
+            // Avoid collisions
+            let bondLength = re.bondLength + rec.w / 2 + posData[did].w / 2; // Account for overlap from text
+            let num = 1, denom = 2; // For finding fraction of angle
+            let x: number, y: number;
+            while (true) {
+              ([x, y] = rotateCoords(bondLength, θc));
+              if (collision(rec.x + x, rec.y + y)) {
+                θc += θi * (num / denom);
+                if (num >= denom) {
+                  denom++;
+                  num = 1;
+                }
+                num++;
+              } else break;
+            }
+            posData[did].x = rec.x + x;
+            posData[did].y = rec.y + y;
+            // processStack.push({ gid: did, θu: θc, θv: 2 * Math.PI + θc });
+            processStack.push({ gid: did, θu: 0, θv: 2 * Math.PI });
+          }
+        }
+        doneGroups.add(data.gid);
+        iters++;
+      }
+    }
+
+    return posData;
+  }
+
+  /** Render molecule to canvas */
+  public render(canvas: HTMLCanvasElement, re?: IRenderMolecule) {
+    const ctx = canvas.getContext("2d");
+
+    if (re === undefined) re = createRenderMoleculeObject();
+    const positions = this.getGroupPositions(ctx, re), rects = Object.values(positions);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const rec of rects) {
+      if (rec.x < minX) minX = rec.x;
+      if (rec.x > maxX) maxX = rec.x;
+      if (rec.y < minY) minY = rec.y;
+      if (rec.y > maxY) maxY = rec.y;
+    }
+
+    // Get distance from (0,0) such that the molecule is centred
+    // let d = (Math.hypot(canvas.width, canvas.height) - Math.hypot(maxX - minX, maxY - minY)) / (2*Math.SQRT2);
+    let θ = Math.atan2(canvas.width - (maxX + minX), canvas.height - (maxY + minY));
+    let h = 0.5 * Math.hypot(canvas.height - (maxY + minY), canvas.width - (maxX + minX));
+    let dx = h * Math.sin(θ);
+    let dy = h * Math.cos(θ);
+    for (const vec of rects) {
+      vec.x += dx;
+      vec.y += dy;
+    }
+
+    // // Bounding box
+    // ctx.strokeStyle = "yellow";
+    // ctx.strokeRect(minX + dx, minY + dy, maxX - minX, maxY - minY);
+
+    // Bonds
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 1;
+    for (const id in positions) {
+      if (positions[id]) {
+        for (const bond of this.groups[id].bonds) {
+          if (positions[bond.dest]) {
+            if (bond.bond === "-" || bond.bond === "#") {
+              ctx.beginPath();
+              ctx.moveTo(positions[id].x, positions[id].y);
+              ctx.lineTo(positions[bond.dest].x, positions[bond.dest].y);
+              ctx.stroke();
+            }
+            if (bond.bond === "=" || bond.bond === "#") {
+              let θ = Math.atan2(positions[bond.dest].y - positions[id].y, positions[bond.dest].x - positions[id].x);
+              let x = re.bondGap * Math.sin(θ), y = re.bondGap * Math.cos(θ);
+              ctx.beginPath();
+              ctx.moveTo(positions[id].x - x, positions[id].y - y);
+              ctx.lineTo(positions[bond.dest].x - x, positions[bond.dest].y - y);
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(positions[id].x + x, positions[id].y + y);
+              ctx.lineTo(positions[bond.dest].x + x, positions[bond.dest].y + y);
+              ctx.stroke();
+            }
+          }
+        }
+      }
+    }
+
+    for (const id in positions) {
+      let rec = positions[id], group = this.groups[id], P = 4, extraHs = 0;
+      if (re.collapseH) extraHs = this.getAllBonds(group.ID).filter(bond => (this.groups[bond.dest].isImplicit ? re.renderImplicit : true) && this.groups[bond.dest].isElement("H")).length;
+      ctx.fillStyle = re.bg;
+      ctx.fillRect(rec.x - rec.w / 2 - P, rec.y - rec.h / 2 - P, rec.w + 2 * P, rec.h + 2 * P);
+      group.renderAsText(ctx, { x: rec.x - rec.w / 2, y: rec.y + rec.h * 0.25 }, re, extraHs);
+    }
   }
 }

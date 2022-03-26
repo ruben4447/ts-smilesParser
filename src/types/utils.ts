@@ -54,3 +54,13 @@ export interface IReactionOpts {
   addH?: boolean;
   primarySide?: boolean;
 }
+
+export interface IVec {
+  x: number;
+  y: number;
+}
+
+export interface IRec extends IVec {
+  w: number;
+  h: number;
+}

@@ -342,4 +342,9 @@ export class ParsedSMILES {
   public generateSMILES(showImplicits = false) {
     return this.molecules.map(mol => mol.generateSMILES(showImplicits)).join(".");
   }
+
+  /** Render to a canvas */
+  public render(canvas: HTMLCanvasElement) {
+    
+  }
 }

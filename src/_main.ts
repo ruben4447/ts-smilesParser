@@ -9,6 +9,7 @@ import { Tabs } from './classes/Tabs';
 import { Molecule } from './classes/Molecule';
 import { IGroupStrMap } from './types/Group';
 import { createParseOptionsObject } from './types/SMILES';
+import { defaultRenderMoleculeObject } from './types/Molecule';
 globalThis.$globals = $globals;
 
 var canvas: HTMLCanvasElement, env: SMILES;
@@ -33,8 +34,8 @@ function _main() {
   tabs.open("smiles");
   document.body.appendChild(tabContainer);
 
-  parseSmiles("C1CCC.CC1");
-  // parseSmiles("C=CC(=O)C");
+  parseSmiles("C(=O)O");
+  // parseSmiles("C=CO");
   // parseSmiles("C1C(=O)CC1");
   // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
 }
@@ -61,17 +62,23 @@ function generateSMILESContent() {
   p.insertAdjacentHTML("beforeend", " | Parse Option: ");
   selectBoolOption = document.createElement("select");
   p.appendChild(selectBoolOption);
+  // Allow user to configure stuff
+  const opts = {};
   for (let key in createParseOptionsObject()) {
-    selectBoolOption.insertAdjacentHTML("beforeend", `<option value='${key}'>${key}</option>`);
+    opts[key] = { get: () => $globals.env.parseOptions[key], set: (v: boolean) => ($globals.env.parseOptions[key] = v) };
   }
+  opts['renderImplicit'] = { get: () => $globals.renderOpts.renderImplicit, set: (v: boolean) => ($globals.renderOpts.renderImplicit = v) };
+  opts['collapseHydrogens'] = { get: () => $globals.renderOpts.collapseH, set: (v: boolean) => ($globals.renderOpts.collapseH = v) };
+  for (let key in opts) selectBoolOption.insertAdjacentHTML("beforeend", `<option value='${key}'>${key}</option>`);
+
   p.insertAdjacentHTML("beforeend", " <span>=</span> ");
   inputBoolOption = document.createElement("input");
   inputBoolOption.type = "checkbox";
   selectBoolOption.addEventListener('change', () => {
-    inputBoolOption.checked = $globals.env.parseOptions[selectBoolOption.value];
+    inputBoolOption.checked = opts[selectBoolOption.value].get();
   });
   inputBoolOption.addEventListener('change', () => {
-    $globals.env.parseOptions[selectBoolOption.value] = inputBoolOption.checked;
+    opts[selectBoolOption.value].set(inputBoolOption.checked);
     parseSmiles($globals.parsedSMILES.smiles);
   });
   p.appendChild(inputBoolOption);
@@ -295,7 +302,7 @@ function _error(e: Error) {
 }
 
 function parseSmiles(smiles: string) {
-  const ctx = canvas.getContext("2d");
+  const ctx = $globals.canvas.getContext("2d");
   elOutput.innerHTML = '';
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   inputSMILES.value = smiles;
@@ -313,6 +320,11 @@ function parseSmiles(smiles: string) {
     return;
   }
   $globals.parsedSMILES = ps;
+
+  ctx.save();
+  ctx.font = "14px Arial";
+  ps.molecules[0].render($globals.canvas, $globals.renderOpts);
+  ctx.restore();
 
   // SMILES
   elOutput.innerHTML += `<b>SMILES</b>: ${ps.generateSMILES()} | Took <em>${utils.numstr(parseTime)}</em> ms | Created ${utils.numstr(ps.molecules.length)} molecule${ps.molecules.length === 1 ? '' : 's'}`;
