@@ -1,4 +1,6 @@
-import type Ring from "../classes/Rings";
+import type { Group } from "../classes/Group";
+import type { Molecule } from "../classes/Molecule";
+import type { Ring } from "../classes/Rings";
 import { BondType } from "./Bonds";
 
 export interface IAtom {
@@ -15,6 +17,7 @@ export interface IParseOptions {
   enableInorganicAtoms: boolean; // [...]
   enableChains: boolean; // (...)
   enableRings: boolean;
+  enableAromaticity: boolean;
   enableSeperatedStructures: boolean;
   cumulativeCharge?: boolean; // Allow O{-}{-} ?
   checkBondCount?: boolean;
@@ -26,6 +29,7 @@ export const createParseOptionsObject = (): IParseOptions => ({
   enableInorganicAtoms: true,
   enableChains: true,
   enableRings: true,
+  enableAromaticity: true,
   enableSeperatedStructures: true,
   cumulativeCharge: true,
   checkBondCount: true,

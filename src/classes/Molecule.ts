@@ -1,16 +1,21 @@
-import { BondType, IBond } from "../types/Bonds";
+import { organicSubset } from "../data-vars";
+import { IBond } from "../types/Bonds";
 import { IGroupStrMap, IMatchAtom } from "../types/Group";
 import { createGenerateSmilesStackItemObject, IAtomCount, ICountAtoms, IElementToIonMap, IGenerateSmilesStackItem } from "../types/SMILES";
-import { assembleEmpiricalFormula, assembleMolecularFormula, extractElement, extractInteger, numstr, _regexNum } from "../utils";
+import { assembleEmpiricalFormula, assembleMolecularFormula, extractElement, extractInteger, getBondNumber, numstr, _regexNum } from "../utils";
+import { AdvError } from "./Error";
 import { Group } from "./Group";
+import Ring from "./Rings";
 
 export class Molecule {
   public groups: { [id: number]: Group };
+  public rings: Ring[];
 
   constructor();
   constructor(groups: Group[]);
   constructor(groups: { [id: number]: Group });
   constructor(groups?: | Group[] | { [id: number]: Group }) {
+    this.rings = [];
     if (groups === undefined) {
       this.groups = {};
     } else if (Array.isArray(groups)) {
@@ -57,6 +62,17 @@ export class Molecule {
     return bonds;
   }
 
+  /** Get total bond count for a group */
+  public getBondCount(groupID: number) {
+    let count = 0;
+    this.groups[groupID].bonds.forEach(bond => (count += getBondNumber(bond.bond)));
+    for (let gid in this.groups) {
+      if (+gid === groupID) continue;
+      this.groups[gid].bonds.forEach(bond => bond.dest === groupID && (count += getBondNumber(bond.bond)));
+    }
+    return count;
+  }
+
   /** Remove unbonded groups from molecule, starting from a given group */
   public removeUnbondedGroups(startID: number) {
     const bondedGroups = new Set<number>(); // Set of group IDs which are bonded
@@ -84,6 +100,55 @@ export class Molecule {
         delete this.groups[gid]; // Remove
       }
     }
+  }
+
+  /** Add implicit hydrogens to atoms e.g. C -> C([H])([H])[H]. Note, these hydrogens are marked as implicit and will not be in generated SMILES */
+  public addImplicitHydrogens() {
+    for (const gid in this.groups) {
+      const group = this.groups[gid];
+      if (group.inOrganicSubset()) {
+        const bonds = this.getBondCount(group.ID);
+        if (group.charge === 0) {
+          // Find target bonds
+          let targetBonds: number = NaN, el = Array.from(group.elements.keys())[0];
+          for (let n of organicSubset[el]) {
+            if (n >= bonds) {
+              targetBonds = n
+              break;
+            }
+          }
+          // Add hydrogens (if got targetBonds)
+          if (!isNaN(targetBonds)) {
+            let hCount = targetBonds - bonds;
+            for (let h = 0; h < hCount; h++) {
+              let H = new Group({ chainDepth: group.chainDepth + 1 });
+              H.addElement("H");
+              H.isImplicit = true;
+              group.addBond('-', H);
+              this.groups[H.ID] = H;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Check each atom - has it too many/few bonds?
+   * Return `true` if valid, else returns information object
+  */
+  public checkBondCounts(): true | { group: Group, element: string, error: AdvError } {
+    for (const gid in this.groups) {
+      const group = this.groups[gid], bonds = this.getBondCount(group.ID);
+      if (group.charge === 0 && group.inOrganicSubset()) {
+        let el = Array.from(group.elements.keys())[0] as string;
+        if (!organicSubset[el].some((n: number) => n === bonds)) {
+          const error = new AdvError(`Bond Error: invalid bond count for organic atom '${el}': ${bonds}. Expected ${organicSubset[el].join(' or ')}.`, el).setColumnNumber(group.smilesStringPosition);
+          return { group, element: el, error };
+        }
+      }
+    }
+    return true;
   }
 
   /** Return array of matching recIDs if match. */

@@ -1,4 +1,4 @@
-import SMILES from './classes/SMILES';
+import { ParsedSMILES, SMILES } from './classes/SMILES';
 import * as utils from './utils';
 globalThis.utils = utils;
 import * as dataVars from './data-vars';
@@ -7,7 +7,8 @@ import $globals from './globals';
 import { moleculeTypes, reactions } from './organic';
 import { Tabs } from './classes/Tabs';
 import { Molecule } from './classes/Molecule';
-import { halogen, IGroupStrMap } from './types/Group';
+import { IGroupStrMap } from './types/Group';
+import { createParseOptionsObject } from './types/SMILES';
 globalThis.$globals = $globals;
 
 var canvas: HTMLCanvasElement, env: SMILES;
@@ -32,9 +33,8 @@ function _main() {
   tabs.open("smiles");
   document.body.appendChild(tabContainer);
 
-  // parseSmiles("C1:C:C:C:C:C1");
+  parseSmiles("C1CCC.CC1");
   // parseSmiles("C=CC(=O)C");
-  parseSmiles("CCCO");
   // parseSmiles("C1C(=O)CC1");
   // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
 }
@@ -61,9 +61,9 @@ function generateSMILESContent() {
   p.insertAdjacentHTML("beforeend", " | Parse Option: ");
   selectBoolOption = document.createElement("select");
   p.appendChild(selectBoolOption);
-  ["enableInorganicAtoms", "enableChargeClauses", "enableChains", "enableRings", "enableSeperatedStructures", "cumulativeCharge", "checkBondCount", "addImplicitHydrogens"].forEach(op => {
-    selectBoolOption.insertAdjacentHTML("beforeend", `<option value='${op}'>${op}</option>`);
-  });
+  for (let key in createParseOptionsObject()) {
+    selectBoolOption.insertAdjacentHTML("beforeend", `<option value='${key}'>${key}</option>`);
+  }
   p.insertAdjacentHTML("beforeend", " <span>=</span> ");
   inputBoolOption = document.createElement("input");
   inputBoolOption.type = "checkbox";
@@ -72,7 +72,7 @@ function generateSMILESContent() {
   });
   inputBoolOption.addEventListener('change', () => {
     $globals.env.parseOptions[selectBoolOption.value] = inputBoolOption.checked;
-    parseSmiles();
+    parseSmiles($globals.parsedSMILES.smiles);
   });
   p.appendChild(inputBoolOption);
 
@@ -134,7 +134,7 @@ function generateAnalyseMoleculeContent() {
     btnLoadSmiles.innerText = "Load SMILES";
     btnLoadSmiles.addEventListener("click", () => {
       parseSmiles(molecule.generateSMILES());
-      prepAnalyseMolecule($globals.env.molecules[0]);
+      prepAnalyseMolecule($globals.parsedSMILES.molecules[0]);
     });
     p.appendChild(btnLoadSmiles);
 
@@ -162,15 +162,12 @@ function generateAnalyseMoleculeContent() {
                 if (info.react) {
                   let reactant: Molecule;
                   if (info.provideReactant && typeof resp === "string") {
-                    let sp = new SMILES();
-                    if (info.provideReactant.smilesOpts) {
-                      for (let key in info.provideReactant.smilesOpts) sp.parseOptions[key] = info.provideReactant.smilesOpts[key];
-                    }
-                    sp.parseOptions.enableSeperatedStructures = false;
-                    sp.setSMILESstring(resp);
+                    const sp = new SMILES();
+                    const optOverride: { [opt: string]: boolean } = info.provideReactant.smilesOpts ?? {};
+                    optOverride.enableSeperatedStructures = false;
                     try {
-                      sp.parse();
-                      reactant = sp.molecules[0];
+                      let si = sp.parse(resp, optOverride);
+                      reactant = si.molecules[0];
                     } catch (e) {
                       ok.ok = false;
                       ok.data = e.message;
@@ -297,17 +294,16 @@ function _error(e: Error) {
   utils.canvasWriteText(ctx, e.message, 10, 15);
 }
 
-function parseSmiles(smiles?: string) {
+function parseSmiles(smiles: string) {
   const ctx = canvas.getContext("2d");
   elOutput.innerHTML = '';
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  smiles ??= env.getSMILESstring();
   inputSMILES.value = smiles;
 
-  env.setSMILESstring(smiles);
+  let ps: ParsedSMILES;
   try {
     parseTime = performance.now();
-    env.parse();
+    ps = env.parse(smiles);
     parseTime = performance.now() - parseTime;
   } catch (e) {
     elOutput.innerText = `Error!`;
@@ -316,15 +312,15 @@ function parseSmiles(smiles?: string) {
     parseTime = -1;
     return;
   }
-
+  $globals.parsedSMILES = ps;
 
   // SMILES
-  elOutput.innerHTML += `<b>SMILES</b>: ${env.generateSMILES(env.molecules)} | Took <em>${utils.numstr(parseTime)}</em> ms | Created ${utils.numstr(env.molecules.length)} molecule${env.molecules.length === 1 ? '' : 's'}`;
+  elOutput.innerHTML += `<b>SMILES</b>: ${ps.generateSMILES()} | Took <em>${utils.numstr(parseTime)}</em> ms | Created ${utils.numstr(ps.molecules.length)} molecule${ps.molecules.length === 1 ? '' : 's'}`;
 
   const mdiv = document.createElement("div");
   elOutput.appendChild(mdiv);
 
-  env.molecules.forEach(molecule => {
+  ps.molecules.forEach(molecule => {
     const el = document.createElement("p");
     mdiv.appendChild(el);
 
@@ -336,10 +332,6 @@ function parseSmiles(smiles?: string) {
       $globals.tabs.open("analyse");
     });
     el.appendChild(btn);
-
-    // const fgroups = molecule.getFunctionalGroups();
-    // let fgroupStr = Array.from(fgroups).map(([group, locations]) => `<strong>${group}${locations.length > 1 ? ` &times; ${utils.numstr(locations.length)}` : ''}</strong>: ` + locations.map(where => `${where.symbol} (at ${where.pos})`)).join('; ');
-    // el.innerHTML += ` | <strong>Functional Groups</strong>: ${fgroupStr}`;
   });
 }
 

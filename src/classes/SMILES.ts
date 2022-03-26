@@ -1,53 +1,73 @@
 import { organicSubset } from "../data-vars";
 import { BondType } from "../types/Bonds";
 import { createParseOptionsObject, IParseOptions, IRingMap } from "../types/SMILES";
-import { IGroupMap } from "../types/Group";
-import { arrFromBack, extractBetweenMatching, extractDuplicates, extractElement, getBondNumber, isBondChar, parseChargeString, parseDigitString, parseInorganicString, _chargeRegex1, _chargeRegex2, _regexNum } from "../utils";
+import { arrFromBack, extractBetweenMatching, extractDuplicates, extractElement, isBondChar, parseChargeString, parseDigitString, parseInorganicString, _chargeRegex1, _chargeRegex2, _regexNum } from "../utils";
 import { AdvError } from "./Error";
-import { Group, resetGroupID } from "./Group";
+import { Group } from "./Group";
 import { Molecule } from "./Molecule";
 import Ring from "./Rings";
 
 export class SMILES {
-  private _smilesString: string = '';
-  private _groups: IGroupMap;
-  public molecules: Molecule[];
   public parseOptions: IParseOptions = createParseOptionsObject();
-  private _openRings: IRingMap; // What rings are open? This index corresponds to the ring digits
-  private _rings: Ring[];
-
-  public getSMILESstring(): string { return this._smilesString; }
-  public setSMILESstring(string: string) { this._smilesString = string; }
 
   /**
-   * Parses this._smilesString
-   * @throws Error
+   * Parse a SMILES string according to this.parseOptions (individual properties mey be overriden by parseOptionsOverride)
+   * @throws AdvError
    */
-  public parse() {
-    this._groups = {};
-    this.molecules = [];
-    this._openRings = {};
-    this._rings = [];
-    // resetGroupID();
+  public parse(smiles: string, parseOptionsOverride?: { [opt: string]: boolean }) {
+    const parseOptions = { ...this.parseOptions };
+    if (parseOptionsOverride) {
+      for (let key in parseOptionsOverride) {
+        parseOptions[key] = parseOptionsOverride[key];
+      }
+    }
+
+    const ps = new ParsedSMILES(smiles, parseOptions);
+
     try {
       const mainChain: Group[] = [];
-      this._tryParse(this._smilesString, mainChain);
-      // Add implicit hydrogens?
-      if (this.parseOptions.addImplicitHydrogens) this._addImplcitHydrogens();
-      // Check bond count
+      this._tryParse(ps, smiles, mainChain);
       try {
-        if (this.parseOptions.checkBondCount) this.checkBondCounts(); // Check bond counts
-        this._checkOpenRings();
-        // Create bonds between ring ends
-        this._rings.forEach(ring => {
-          this._groups[ring.members[0]].addBond(ring.isAromatic ? ':' : '-', this._groups[arrFromBack(ring.members)]);
+        // Check that rings do not cross structures
+        ps.molecules.forEach(mol => {
+          mol.rings.forEach(ring => {
+            ring.members.forEach(n => {
+              if (mol.groups[n] === undefined) { // Group not in molecule
+                const start = mol.groups[ring.members[0]];
+                throw new AdvError(`Ring Error: ring structure cannot bridge molecules`, start.toString()).setColumnNumber(start.smilesStringPosition);
+              }
+            });
+          });
         });
-        this.molecules = this.getMolecules();
+        // Check for open rings
+        for (let digit in ps.openRings) {
+          const ring = ps.openRings[digit];
+          if (ring !== undefined) {
+            const openingGroup = ps.groupMap[ring.members[0]];
+            throw new AdvError(`Ring Error: unclosed ring '${ring.digit}'`, smiles.substr(openingGroup.smilesStringPosition)).setColumnNumber(openingGroup.smilesStringPosition);
+          }
+        }
+        // Create bonds between ring ends
+        ps.rings.forEach(ring => {
+          ps.groupMap[ring.members[0]].addBond(ring.isAromatic ? ':' : '-', ps.groupMap[arrFromBack(ring.members)]);
+        });
+        // Add implicit hydrogens?
+        if (parseOptions.addImplicitHydrogens) ps.molecules.forEach(m => m.addImplicitHydrogens());
+        // Check bond count
+        if (parseOptions.checkBondCount) ps.molecules.forEach(m => {
+          const x = m.checkBondCounts();
+          if (typeof x === 'object') {
+            let col = x.error.columnNumber;
+            x.error.setUnderlineString(smiles);
+            x.error.columnNumber = col;
+            throw x.error;
+          }
+        });
       } catch (e) {
         if (e instanceof AdvError) {
           let col = e.columnNumber;
-          e.insertMessage(`Error in SMILES '${this._smilesString}'`);
-          e.setUnderlineString(this._smilesString);
+          e.insertMessage(`Error in SMILES '${smiles}'`);
+          e.setUnderlineString(smiles);
           e.columnNumber = col;
         }
         throw e;
@@ -57,16 +77,18 @@ export class SMILES {
       if (e instanceof AdvError) throw new Error(e.getErrorMessage());
       throw e;
     }
+
+    return ps;
   }
 
-  private _tryParse(smiles: string, groups: Group[], parent?: Group, chainDepth = 0, indexOffset = 0) {
+  private _tryParse(ps: ParsedSMILES, smiles: string, groups: Group[], parent?: Group, chainDepth = 0, indexOffset = 0) {
     try {
-      return this._parse(smiles, groups, parent, chainDepth, indexOffset);
+      return this._parse(ps, smiles, groups, parent, chainDepth, indexOffset);
     } catch (e) {
       if (e instanceof AdvError) {
         let colNo = indexOffset + e.columnNumber;
-        e.insertMessage(`Error whilst parsing SMILES string "${smiles}" (chain depth ${chainDepth}):`);
-        e.setUnderlineString(smiles);
+        e.insertMessage(`Error whilst parsing SMILES string "${ps.smiles}" (chain depth ${chainDepth}):`);
+        e.setUnderlineString(ps.smiles);
         e.columnNumber = colNo;
       }
       throw e;
@@ -74,35 +96,36 @@ export class SMILES {
   }
 
   /** NOT designed to be called directly */
-  private _parse(smiles: string, groups: Group[], parent?: Group, chainDepth = 0, indexOffset = 0) {
+  private _parse(ps: ParsedSMILES, smiles: string, groups: Group[], parent?: Group, chainDepth = 0, indexOffset = 0) {
     let currentGroup: Group = undefined, currentBond: BondType, currentBondPos = NaN, dontBondNext = false;
     for (let pos = 0; pos < smiles.length;) {
       // #region Disconnected Structures
-      if (this.parseOptions.enableSeperatedStructures && smiles[pos] === "." && chainDepth === 0) {
+      if (ps.parseOptions.enableSeperatedStructures && smiles[pos] === "." && chainDepth === 0) {
         // Unecesarry
         if (dontBondNext) throw new AdvError(`Syntax Error: expected SMILES, got seperator '.'`, '.').setColumnNumber(pos);
         dontBondNext = true;
+        ps.molecules.push(new Molecule());
         pos++;
         continue;
       }
       //#endregion
 
       // #region Explicit Bond
-      if (isBondChar(smiles[pos])) {
+      if (isBondChar(smiles[pos]) && (smiles[pos] === ":" ? ps.parseOptions.enableAromaticity : true)) {
         currentBond = smiles[pos] as BondType;
         currentBondPos = pos;
         pos++;
         if (pos >= smiles.length) throw new AdvError(`Syntax Error: invalid bond '${currentBond}': unexpected end-of-input after bond`, currentBond).setColumnNumber(pos - 1);
         if (currentBond === ':') {
-          if (Object.keys(this._openRings).length === 0) throw new AdvError(`Bond Error: aromatic bond '${currentBond}' only valid in rings`, currentBond).setColumnNumber(pos - 1);
-          for (const rid in this._openRings) this._openRings[rid].isAromatic = true;
+          if (Object.keys(ps.openRings).length === 0) throw new AdvError(`Bond Error: aromatic bond '${currentBond}' only valid in rings`, currentBond).setColumnNumber(pos - 1);
+          for (const rid in ps.openRings) ps.openRings[rid].isAromatic = true;
         }
       }
       //#endregion
 
       // {...}
       // #region Charge
-      if (smiles[pos] === '{' && this.parseOptions.enableChargeClauses) {
+      if (smiles[pos] === '{' && groups.length > 0 && ps.parseOptions.enableChargeClauses) {
         let extraction = extractBetweenMatching(smiles, "{", "}", pos);
         // Was the extraction OK?
         if (extraction.openCount !== 0) throw new AdvError(`Syntax Error: unmatched closing brace at position ${pos} '${smiles[pos]}'`, smiles.substr(pos)).setColumnNumber(pos);
@@ -111,22 +134,20 @@ export class SMILES {
         let charge = parseChargeString(extraction.extracted);
         if (isNaN(charge)) throw new AdvError(`Syntax Error: invalid charge string. Expected ${_chargeRegex1} or ${_chargeRegex2}`, extraction.extracted).setColumnNumber(pos + 1);
 
-        // Apply to last atom, if exists. Is charge already applied?
-        if (groups.length > 0) {
-          let group = arrFromBack(groups, 1), length = extraction.extracted.length + 2;
-          // Cumulative charge?
-          if (group.charge !== 0 && !this.parseOptions.cumulativeCharge) throw new AdvError(`Syntax Error: unexpected charge clause`, "{" + extraction.extracted + "}").setColumnNumber(pos);
-          group.charge += charge;
-          pos += length;
-          group.smilesStringLength += length;
-          continue;
-        }
+        // Apply to last group Is charge already applied?
+        let group = arrFromBack(groups, 1), length = extraction.extracted.length + 2;
+        // Cumulative charge?
+        if (group.charge !== 0 && !ps.parseOptions.cumulativeCharge) throw new AdvError(`Syntax Error: unexpected charge clause`, "{" + extraction.extracted + "}").setColumnNumber(pos);
+        group.charge += charge;
+        pos += length;
+        group.smilesStringLength += length;
+        continue;
       }
       //#endregion
 
       // [...]
       // #region Inorganic Atom/Ion
-      else if (smiles[pos] === '[' && this.parseOptions.enableInorganicAtoms) {
+      else if (smiles[pos] === '[' && ps.parseOptions.enableInorganicAtoms) {
         // Extract between [...]
         let extraction = extractBetweenMatching(smiles, "[", "]", pos);
         if (extraction.openCount !== 0) throw new AdvError(`Syntax Error: unmatched closing bracket at position ${pos} '${smiles[pos]}'`, smiles.substr(pos)).setColumnNumber(pos);
@@ -144,6 +165,7 @@ export class SMILES {
               currentGroup.charge = info.charge;
 
               groups.push(currentGroup);
+              ps.molecules[ps.molecules.length - 1].groups[currentGroup.ID] = currentGroup;
               currentGroup = undefined;
 
               pos += extraction.extracted.length + 2; // [<extraction.extracted>]
@@ -161,7 +183,7 @@ export class SMILES {
 
       // (...)
       // #region Chains
-      else if (smiles[pos] === '(' && this.parseOptions.enableChains) {
+      else if (smiles[pos] === '(' && ps.parseOptions.enableChains) {
         // Extract chain SMILES string
         let extraction = extractBetweenMatching(smiles, "(", ")", pos);
         if (extraction.openCount !== 0) throw new AdvError(`Syntax Error: unmatched closing parenthesis at position ${pos} '${smiles[pos]}'`, smiles.substr(pos)).setColumnNumber(pos);
@@ -171,7 +193,7 @@ export class SMILES {
         if (groups.length === 0) throw new AdvError(`Syntax Error: unexpected SMILES chain (no parent could be found)`, "(" + extraction.extracted + ")").setColumnNumber(pos);
         const parent = groups[groups.length - 1], chainGroups: Group[] = [];
         try {
-          this._tryParse(extraction.extracted, chainGroups, parent, chainDepth + 1, indexOffset + pos + 1);
+          this._tryParse(ps, extraction.extracted, chainGroups, parent, chainDepth + 1, indexOffset + pos + 1);
         } catch (e) {
           if (e instanceof AdvError) e.insertMessage(`Error whilst parsing chain "(${extraction.extracted})" at position ${pos}: `);
           throw e;
@@ -183,7 +205,7 @@ export class SMILES {
       // #endregion
 
       // #region Ring digits
-      else if ((_regexNum.test(smiles[pos]) || smiles[pos] === '%') && this.parseOptions.enableRings) {
+      else if ((_regexNum.test(smiles[pos]) || smiles[pos] === '%') && ps.parseOptions.enableRings) {
         if (groups.length === 0) throw new AdvError(`Syntax Error: unexpected ring digit`, smiles[pos]).setColumnNumber(pos);
         const obj = parseDigitString(smiles.substr(pos));
         const extractedString = smiles.substr(pos, obj.endIndex);
@@ -201,13 +223,14 @@ export class SMILES {
         // Add last atom to ring if it is opened
         // Do not add if ring is closed -> this was handled last time
         obj.digits.forEach(digit => {
-          if (this._openRings[digit] === undefined) {
+          if (ps.openRings[digit] === undefined) {
             const ring = new Ring(digit);
-            this._openRings[digit] = ring;
-            this._rings.push(ring);
-            this._openRings[digit].members.push(group.ID);
+            ps.openRings[digit] = ring;
+            ps.rings.push(ring);
+            ps.molecules[ps.molecules.length - 1].rings.push(ring);
+            ps.openRings[digit].members.push(group.ID);
           } else {
-            delete this._openRings[digit];
+            delete ps.openRings[digit];
           }
         });
 
@@ -231,6 +254,7 @@ export class SMILES {
               if (currentGroup === undefined) currentGroup = new Group({ chainDepth }).setSMILESposInfo(indexOffset + pos, extracted.length);
               currentGroup.addElement(extracted);
               groups.push(currentGroup);
+              ps.molecules[ps.molecules.length - 1].groups[currentGroup.ID] = currentGroup;
               currentGroup = undefined;
               pos += extracted.length;
             }
@@ -279,204 +303,43 @@ export class SMILES {
       //#endregion
 
       // #region Add to Any Open Rings
-      for (let digit in this._openRings) {
-        if (this._openRings.hasOwnProperty(digit)) {
-          this._openRings[digit].members.push(groups[groups.length - 1].ID);
+      for (let digit in ps.openRings) {
+        if (ps.openRings.hasOwnProperty(digit)) {
+          ps.openRings[digit].members.push(groups[groups.length - 1].ID);
         }
       }
       //#endregion
     }
 
-    // Add to global collection
-    groups.forEach(g => this._groups[g.ID] = g);
-  }
-
-  /** Add implicit hydrogens e.g. "C" -> "C([H])([H])([H])([H])" */
-  private _addImplcitHydrogens() {
-    for (const gid in this._groups) {
-      if (this._groups.hasOwnProperty(gid)) {
-        const group = this._groups[gid];
-        if (group.inOrganicSubset()) {
-          const bonds = this._getBondCount(group);
-          if (group.charge === 0) {
-            // Find target bonds
-            let targetBonds: number = NaN, el = Array.from(group.elements.keys())[0];
-            for (let n of organicSubset[el]) {
-              if (n >= bonds) {
-                targetBonds = n
-                break;
-              }
-            }
-            // Add hydrogens (if got targetBonds)
-            if (!isNaN(targetBonds)) {
-              let hCount = targetBonds - bonds;
-              for (let h = 0; h < hCount; h++) {
-                let hydrogen = new Group({ chainDepth: group.chainDepth + 1 });
-                hydrogen.addElement("H");
-                hydrogen.isImplicit = true;
-                group.addBond('-', hydrogen);
-                this._groups[hydrogen.ID] = hydrogen;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * Check each atom - has it too many/few bonds?
-   * Return `true` if valid, else throws AdvError
-  */
-  public checkBondCounts() {
-    try {
-      for (const gid in this._groups) {
-        if (this._groups.hasOwnProperty(gid)) {
-          const group = this._groups[gid], bonds = this._getBondCount(group);
-          // If charge is zero, and not in organic subset, ignore
-          if (group.charge === 0) {
-            if (group.inOrganicSubset()) {
-              let el = Array.from(group.elements.keys())[0], bondNumbers = organicSubset[el], ok = false;
-              for (let n of bondNumbers) {
-                if (n === bonds) {
-                  ok = true;
-                  break;
-                }
-              }
-              if (!ok) throw new AdvError(`Bond Error: invalid bond count for organic atom '${el}': ${bonds}. Expected ${bondNumbers.join(' or ')}.`, el).setColumnNumber(group.smilesStringPosition);
-            }
-          }
-        }
-      }
-    } catch (e) {
-      if (e instanceof AdvError) {
-        let col = e.columnNumber;
-        e.setUnderlineString(this._smilesString);
-        e.columnNumber = col;
-      }
-      throw e;
-    }
-  }
-
-  /** How many bonds does said group have? */
-  private _getBondCount(group: Group): number {
-    let count = group.getBondCount();
-    for (const gid in this._groups) {
-      if (this._groups.hasOwnProperty(gid)) {
-        this._groups[gid].bonds.forEach(bond => {
-          if (bond.dest === group.ID) count += getBondNumber(bond.bond);
-        });
-      }
-    }
-    return count;
-  }
-
-  /** Check that there are no open rings. */
-  private _checkOpenRings() {
-    for (let digit in this._openRings) {
-      if (this._openRings.hasOwnProperty(digit)) {
-        const ring = this._openRings[digit];
-        if (ring !== undefined) {
-          const openingGroup = this._groups[ring.members[0]];
-          console.log(openingGroup)
-          throw new AdvError(`Ring Error: unclosed ring '${ring.digit}'`, this._smilesString.substr(openingGroup.smilesStringPosition)).setColumnNumber(openingGroup.smilesStringPosition);
-        }
-      }
-    }
-  }
-
-  /** Return array of molecules */
-  public getMolecules(): Molecule[] {
-    const moleculeGroups: Group[][] = [];
-    const stack: number[] = Object.keys(this._groups).map(k => +k).reverse(); // Stack of IDs to this._group to scan (or NaN if done)
-    const bondedGroups = new Set<number>(); // Set of group IDs which have been bonded
-    const doneGroups = new Set<number>(); // Set of group IDs which have been done
-
-    while (stack.length !== 0) {
-      const i = stack.length - 1, group = this._groups[stack[i]];
-      if (doneGroups.has(group.ID)) {
-        stack.splice(i, 1);
-      } else {
-        let isNew = !bondedGroups.has(group.ID);
-        let arr: Group[];
-        if (isNew) {
-          arr = [group];
-          moleculeGroups.push(arr);
-        } else {
-          arr = arrFromBack(moleculeGroups);
-        }
-
-        for (let j = group.bonds.length - 1; j >= 0; j--) {
-          const bond = group.bonds[j];
-          arr.push(this._groups[bond.dest]);
-          // doneGroups.add(bond.dest);
-          stack.push(bond.dest);
-          bondedGroups.add(bond.dest);
-        }
-
-        doneGroups.add(group.ID);
-        bondedGroups.add(group.ID);
-      }
-    }
-
-    return moleculeGroups.map(groups => new Molecule(groups));
-  }
-
-  // /** Search for a functional group */
-  // public matchSegments(groups: IGroupMap) {
-  //   const checkStack: number[] = Object.keys(this._groups).map(k => +k).reverse(); // Groups to check
-  //   const csToMatchIndex: number[] = Array.from<number>({ length: checkStack.length }).fill(-1); // Map IDs of this._groups to section we are macthing from in groups (or -1 if none)
-  //   let matchingCount = 0;
-  //   let stackLength = checkStack.length; // Record length of stack before started checking molecule
-
-  //   /**  If groups match, go throuh each bond and check if it matches a bond from the group in segments. If so, and matches atom it is connected to, push to record. Return is any continuations were made. */
-  //   const exploreForward = (gid: number, fgid: number) => {
-  //     let anyMatch = false;
-  //     if (groups[fgid].matchGroup(this._groups[gid])) {
-  //       for (const bond of this._groups[gid].bonds) {
-  //         for (const fbond of groups[fgid].bonds) {
-  //           if (bond.bond === fbond.bond && this._groups[bond.dest].matchGroup(groups[fbond.dest])) {
-  //             checkStack.push(bond.dest);
-  //             csToMatchIndex.push(fbond.dest);
-  //             anyMatch = true;
-  //           }
-  //         }
-  //       }
-  //     }
-  //     return anyMatch;
-  //   };
-
-  //   while (checkStack.length > 0) {
-  //     const gid = checkStack.pop(), fgid = csToMatchIndex.pop();
-
-  //     if (fgid !== -1) {
-  //       let cont = exploreForward(gid, fgid);
-  //       if (!cont) {
-  //         matchingCount = -1;
-  //         checkStack.length = stackLength;
-  //         csToMatchIndex.length = stackLength;
-  //       }
-  //     } else {
-  //       for (const fgid in groups) {
-  //         exploreForward(gid, +fgid);
-  //       }
-  //     }
-
-  //     if (!matching) {
-  //       matching = true;
-  //       checkStack.length = stackLength;
-  //     }
-  //   }
-  // }
-
-  /** Generate SMILES string from parsed data.
-   * @param molecules - Generate SMILES from provided array of molecules. If not provided, molecules = this.getMolecules()
-   * @param showImplicits - Render implicit groups? (if .isImplicit === true)
-  */
-  public generateSMILES(molecules?: Molecule[], showImplicits = false): string {
-    if (molecules === undefined) molecules = this.getMolecules();
-    return molecules.map(mol => mol.generateSMILES()).join(".");
+    // Add groups to SMILES instance
+    groups.forEach(g => ps.groupMap[g.ID] = g);
   }
 }
 
-export default SMILES;
+/** Output from SMILES#parse */
+export class ParsedSMILES {
+  public readonly smiles: string; // Original SMILES string
+  public readonly parseOptions: IParseOptions; // Options used to parse SMILES
+  public groups: Group[];
+  public groupMap: { [gid: number]: Group };
+  public molecules: Molecule[];
+  public openRings: IRingMap;
+  public rings: Ring[];
+
+  constructor(smiles: string, parseOptions: IParseOptions) {
+    this.smiles = smiles;
+    this.parseOptions = parseOptions;
+    this.groups = [];
+    this.groupMap = {};
+    this.molecules = [new Molecule()];
+    this.openRings = {};
+    this.rings = [];
+  }
+
+  /** Generate SMILES string from parsed data.
+   * @param showImplicits - Render implicit groups? (if .isImplicit === true)
+  */
+  public generateSMILES(showImplicits = false) {
+    return this.molecules.map(mol => mol.generateSMILES(showImplicits)).join(".");
+  }
+}

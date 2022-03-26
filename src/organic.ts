@@ -707,7 +707,7 @@ export const reactions: IReactionInfo[] = [
     end: 16,
     reagents: "Carboxylic acid/conc H2SO4",
     conditions: "50C",
-    provideReactant: { prompt: "Enter carboxylic acid: ", default: "CCCCC(=O)O", smilesOpts: { addImplicitHydrogens: true } },
+    provideReactant: { prompt: "Enter carboxylic acid: ", default: "C(=O)O", smilesOpts: { addImplicitHydrogens: true } },
     react: (mol, group, opts, reactant) => {
       let cgroups = moleculeTypes[14].test(reactant), cgroup = cgroups[0];
       if (cgroups.length === 0) return { ok: false, data: `Molecule ${reactant.generateSMILES()} is not a carboxylic acid` };
