@@ -17,7 +17,7 @@ const globals: IGlobals = {
   useHillSystem: true,
   canvas: undefined,
   tabs: undefined,
-  reactionOpts: { halogen: "Br", addH: true },
+  reactionOpts: { addH: false, primarySide: true },
 };
 
 export default globals;

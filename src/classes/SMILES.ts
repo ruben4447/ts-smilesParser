@@ -1,6 +1,6 @@
 import { organicSubset } from "../data-vars";
 import { BondType } from "../types/Bonds";
-import { createGenerateSmilesStackItemObject, createParseOptionsObject, IGenerateSmilesStackItem, IParseOptions, IRingMap } from "../types/SMILES";
+import { createParseOptionsObject, IParseOptions, IRingMap } from "../types/SMILES";
 import { IGroupMap } from "../types/Group";
 import { arrFromBack, extractBetweenMatching, extractDuplicates, extractElement, getBondNumber, isBondChar, parseChargeString, parseDigitString, parseInorganicString, _chargeRegex1, _chargeRegex2, _regexNum } from "../utils";
 import { AdvError } from "./Error";
@@ -28,7 +28,7 @@ export class SMILES {
     this.molecules = [];
     this._openRings = {};
     this._rings = [];
-    resetGroupID();
+    // resetGroupID();
     try {
       const mainChain: Group[] = [];
       this._tryParse(this._smilesString, mainChain);

@@ -57,6 +57,35 @@ export class Molecule {
     return bonds;
   }
 
+  /** Remove unbonded groups from molecule, starting from a given group */
+  public removeUnbondedGroups(startID: number) {
+    const bondedGroups = new Set<number>(); // Set of group IDs which are bonded
+    bondedGroups.add(startID);
+    const stack: number[] = [startID]; // Stack of groups to explore
+    const doneGroups = new Set<number>(); // Set of groups which have been explored
+
+    while (stack.length !== 0) {
+      const gid = stack.pop();
+      if (!doneGroups.has(gid)) {
+        doneGroups.add(gid);
+        const bonds = this.getAllBonds(gid);
+        for (let i = bonds.length - 1; i >= 0; --i) {
+          if (!doneGroups.has(bonds[i].dest)) {
+            stack.push(bonds[i].dest);
+            bondedGroups.add(bonds[i].dest); // This group is bonded to startID
+          }
+        }
+      }
+    }
+
+    // Remove all groups which are not bonded
+    for (let gid in this.groups) {
+      if (!bondedGroups.has(+gid)) {
+        delete this.groups[gid]; // Remove
+      }
+    }
+  }
+
   /** Return array of matching recIDs if match. */
   // TODO Multiple of same chain from single atom, not only in top-most atom? (e.g. OCO) 
   public matchMolecule(thing: IMatchAtom, matchMany = true): IGroupStrMap[] {
@@ -224,8 +253,9 @@ export class Molecule {
       } else {
         let groupElements = new Map<string, number>();
         groupElements.set(group.toStringFancy(), 1);
-        for (let j = group.bonds.length - 1; j >= 0; j--) {
-          const bond = group.bonds[j];
+        const bonds = this.getAllBonds(group.ID);
+        for (let j = bonds.length - 1; j >= 0; j--) {
+          const bond = bonds[j];
           if (!doneGroups.has(bond.dest) && this.groups[bond.dest].bonds.length === 0) {
             let el = this.groups[bond.dest].toStringFancy();
             groupElements.set(el, (groupElements.get(el) ?? 0) + 1);
@@ -237,7 +267,6 @@ export class Molecule {
         stack[i] = NaN;
         doneGroups.add(group.ID);
       }
-    
     }
     let string = '', lastSegment: string, segCount = 0;
     elements.forEach((map, ei) => {
@@ -380,9 +409,12 @@ export class Molecule {
           stack[i].handled = true;
 
           // Bonds (add in reverse as topmost is processed first)
-          for (let j = group.bonds.length - 1; j >= 0; j--) {
-            const obj = group.bonds[j];
-            stack.push(createGenerateSmilesStackItemObject(obj.dest, i, obj.bond));
+          const bonds = this.getAllBonds(group.ID);
+          for (let j = bonds.length - 1; j >= 0; j--) {
+            const obj = bonds[j];
+            if (!doneGroups.has(obj.dest)) {
+              stack.push(createGenerateSmilesStackItemObject(obj.dest, i, obj.bond));
+            }
           }
 
           doneGroups.add(group.ID);

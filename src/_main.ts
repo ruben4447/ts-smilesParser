@@ -34,7 +34,7 @@ function _main() {
 
   // parseSmiles("C1:C:C:C:C:C1");
   // parseSmiles("C=CC(=O)C");
-  parseSmiles("CCCN");
+  parseSmiles("CCCO");
   // parseSmiles("C1C(=O)CC1");
   // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
 }
@@ -93,22 +93,25 @@ function generateSMILESContent() {
 function generateAnalyseMoleculeContent() {
   const container = document.createElement('div');
 
-  // Select main halogen atom
+  // Setup stuff
   const divSetup = document.createElement('div');
   container.appendChild(divSetup);
-  divSetup.insertAdjacentHTML("beforeend", "<span>Select halogen to be used as <var>X<sub>2</sub></var> and <var>HX</var> in reactions</sp><br><var>X</var> =  &nbsp");
-  const selectHalogen = document.createElement("select");
-  divSetup.appendChild(selectHalogen);
-  ["F", "Cl", "Br", "I"].forEach(halogen => selectHalogen.insertAdjacentHTML("beforeend", `<option value='${halogen}'${$globals.reactionOpts.halogen === halogen ? " selected" : ""}>${halogen}</option>`));
-  selectHalogen.addEventListener("change", () => ($globals.reactionOpts.halogen = selectHalogen.value as halogen));
 
   // Add hydrogens
-  divSetup.insertAdjacentHTML("beforeend", "<br><span title='If addImplicitHydrogens is enabled, hydrogens will be impliciitly added'>Insert Hydrogens?</span> ");
+  divSetup.insertAdjacentHTML("beforeend", "<span title='If addImplicitHydrogens is enabled, hydrogens will be impliciitly added'>Insert Hydrogens?</span> ");
   const checkInsertH = document.createElement("input");
   checkInsertH.type = "checkbox";
   checkInsertH.checked = $globals.reactionOpts.addH;
   checkInsertH.addEventListener("click", () => ($globals.reactionOpts.addH = checkInsertH.checked));
   divSetup.appendChild(checkInsertH);
+
+  divSetup.insertAdjacentHTML("beforeend", "<br><span>Choose primary side or molecule for main organic product</span> ");
+  const checkPrimarySide = document.createElement("input");
+  checkPrimarySide.type = "checkbox";
+  checkPrimarySide.checked = $globals.reactionOpts.primarySide;
+  checkPrimarySide.addEventListener("click", () => ($globals.reactionOpts.primarySide = checkPrimarySide.checked));
+  divSetup.appendChild(checkPrimarySide);
+  divSetup.insertAdjacentHTML("beforeend", "<br><table><thead><tr><th>Group</th><th>Structure</th><th>Primary Side</th></tr></thead><tbody><tr><td>Ether</td><td><var>R-O-R'</var></td><td><var>R</var></td></tr></tbody></table>");
 
   let molecule: Molecule;
 
@@ -151,26 +154,50 @@ function generateAnalyseMoleculeContent() {
             li.insertAdjacentHTML("beforeend", `<span> &rarr; ${moleculeTypes[info.end].name}</span> &nbsp;`);
             const btn = document.createElement("button");
             btn.addEventListener("click", () => {
-              if (confirm(`Carry out reaction ${moleculeTypes[info.start].name} -> ${moleculeTypes[info.end].name} ?${info.name ? '\nReaction Name: ' + info.name : ''}${info.type ? '\nReaction Mechanism: ' + info.type : ''}${info.conditions ? '\nConditions: ' + info.conditions : ''}${info.reagents ? '\nReagents: ' + info.reagents : ''}`)) {
-                let ok: string | void;
+              let text = `Carry out reaction ${moleculeTypes[info.start].name} -> ${moleculeTypes[info.end].name} ?${info.name ? '\nReaction Name: ' + info.name : ''}${info.type ? '\nReaction Mechanism: ' + info.type : ''}${info.conditions ? '\nConditions: ' + info.conditions : ''}${info.reagents ? '\nReagents: ' + info.reagents : ''}`;
+              let resp = info.provideReactant ? prompt(`${text}\n${info.provideReactant.prompt}`, info.provideReactant.default) : confirm(text);
+              let ok: { ok: boolean, data?: string } = { ok: true };
+              if (resp) {
+
                 if (info.react) {
-                  ok = info.react(molecule, organicGroups[+id][0], $globals.reactionOpts);
-                  if (!info.reactOnce && moleculeTypes[id].test) {
-                    while (ok === undefined) {
-                      let groups = moleculeTypes[id].test(molecule);
-                      if (groups.length === 0) break;
-                      ok = info.react(molecule, groups[0], $globals.reactionOpts);
+                  let reactant: Molecule;
+                  if (info.provideReactant && typeof resp === "string") {
+                    let sp = new SMILES();
+                    if (info.provideReactant.smilesOpts) {
+                      for (let key in info.provideReactant.smilesOpts) sp.parseOptions[key] = info.provideReactant.smilesOpts[key];
+                    }
+                    sp.parseOptions.enableSeperatedStructures = false;
+                    sp.setSMILESstring(resp);
+                    try {
+                      sp.parse();
+                      reactant = sp.molecules[0];
+                    } catch (e) {
+                      ok.ok = false;
+                      ok.data = e.message;
+                    }
+                  }
+  
+                  if (ok.ok) {
+                    ok = info.react(molecule, organicGroups[+id][0], $globals.reactionOpts, reactant);
+                    if (!info.reactOnce && moleculeTypes[id].test) {
+                      while (ok === undefined) {
+                        let groups = moleculeTypes[id].test(molecule);
+                        if (groups.length === 0) break;
+                        ok = info.react(molecule, groups[0], $globals.reactionOpts, reactant);
+                      }
                     }
                   }
                 } else {
-                  ok = "Cannot carry out reaction";
+                  ok.ok = false;
+                  ok.data = "Cannot carry out reaction";
                 }
+              }
 
-                if (ok === undefined) {
-                  analyse();
-                } else {
-                  alert("Reaction failed: " + ok);
-                }
+              if (ok.ok) {
+                analyse();
+                if (ok.data) alert(ok.data);
+              } else {
+                alert("Reaction failed: " + ok.data);
               }
             });
             btn.innerText = "Go";

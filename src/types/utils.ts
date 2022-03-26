@@ -1,5 +1,6 @@
 import type { Molecule } from "../classes/Molecule";
 import { halogen, IGroupStrMap } from "./Group";
+import { IParseOptions } from "./SMILES";
 
 export interface IExtractBetweenInformation {
   input: string;
@@ -40,11 +41,16 @@ export interface IReactionInfo {
   end: number; // ID of ending molecule type
   reagents?: string; // Reagents of reaction
   conditions?: string; // Condition of reaction
-  react?: (mol: Molecule, fgroup: IGroupStrMap, opts: IReactionOpts) => void | string; // Carry out reaction
+  react?: (mol: Molecule, fgroup: IGroupStrMap, opts: IReactionOpts, reactant?: Molecule) => { ok: boolean; data?: string }; // Carry out reaction
   reactOnce?: boolean; // Call .react only once? (default = false)
+  provideReactant?: {
+    prompt: string; // Prompt to show user
+    default: string; // Default prompt input
+    smilesOpts?: { [param: string]: boolean } // Overwrite SMILES.parseOptions
+  }; // Ask user for reactant molecule?
 }
 
 export interface IReactionOpts {
-  halogen: halogen;
   addH?: boolean;
+  primarySide?: boolean;
 }

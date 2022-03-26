@@ -160,6 +160,16 @@ export class Group {
     }
   }
 
+  /** Return copy of group */
+  public copy() {
+    let g = new Group();
+    g.charge = this.charge;
+    g.isImplicit = this.isImplicit;
+    g.bonds = this.bonds.map(bond => ({ ...bond }));
+    g.ringDigits = [...this.ringDigits];
+    return g;
+  }
+
   /** String representation of whole atom */
   public toString() {
     let string = '';
@@ -173,12 +183,12 @@ export class Group {
   }
 
   /** To fancy string e.g. "[NH4+]" -> (NH<sub>4</sub>)<sup>+</sup> */
-  public toStringFancy(): string {
+  public toStringFancy(html = false): string {
     let string = this.getElementString(true);
     if (this.elements.size > 1) string = "(" + string + ")";
     if (this.charge !== 0) {
       const charge = chargeToString(this.charge);
-      string += "<sup>" + charge + "</sup>";
+      string += html ? "<sup>" + charge + "</sup>" : "{" + charge + "}";
     }
     return string;
   }

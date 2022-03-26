@@ -25,7 +25,7 @@ export const createParseOptionsObject = (): IParseOptions => ({
   enableChargeClauses: true,
   enableInorganicAtoms: true,
   enableChains: true,
-  enableRings: false,
+  enableRings: true,
   enableSeperatedStructures: true,
   cumulativeCharge: true,
   checkBondCount: true,
