@@ -6,6 +6,7 @@ export type halogen = "F" | "Cl" | "Br" | "I";
 export interface IGroupInformation {
   elements?: Map<string, number>;
   charge?: number;
+  atomicMass?: number;
   ringDigits?: number[];
   bonds?: IBond[];
   chainDepth?: number;

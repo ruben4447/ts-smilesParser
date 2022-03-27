@@ -11,7 +11,6 @@ import { Ring } from "./Rings";
 export class Molecule {
   public groups: { [id: number]: Group };
   public rings: Ring[];
-  public type: "generic" | "reactant" | "reagent" | "product"; // Molecule type
 
   constructor();
   constructor(groups: Group[]);
@@ -28,7 +27,6 @@ export class Molecule {
     } else {
       this.groups = groups;
     }
-    this.type = "generic";
   }
 
   /** Calculate Mr for a compound */

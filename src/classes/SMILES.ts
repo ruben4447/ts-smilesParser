@@ -1,4 +1,4 @@
-import { organicSubset } from "../data-vars";
+import { masses, organicSubset, symbols } from "../data-vars";
 import { BondType } from "../types/Bonds";
 import { createParseOptionsObject, createRenderOptsObject, IParseOptions, IRenderOptions, IRingMap } from "../types/SMILES";
 import { IRec } from "../types/utils";
@@ -32,12 +32,8 @@ export class SMILES {
       this._tryParse(ps, smiles, mainChain);
       try {
         // Incomplete reaction?
-        if (ps.reactionIndexes[0] !== -1 && ps.reactionIndexes[ps.reactionIndexes.length - 1] === -1) {
+        if (ps.reactionIndexes.length % 2 === 1) {
           throw new AdvError(`Syntax Error: ">" expected (incomplete reaction SMILES)`, smiles[smiles.length - 1]).setColumnNumber(smiles.length - 1);
-        }
-        // Set all "generic" molecules to "product" ?
-        if (ps.reactionIndexes[1] !== -1) {
-          for (let ptr = ps.molecules.length - 1; ptr > ps.reactionIndexes[1]; ptr--) ps.molecules[ptr].type = "product";
         }
         // Check that rings do not cross structures
         ps.molecules.forEach(mol => {
@@ -122,7 +118,7 @@ export class SMILES {
       //#endregion
 
       //#region Reaction
-      if (smiles[pos] === ">" && chainDepth === 0 && groups.length > 0 && arrFromBack(ps.reactionIndexes) === -1 && ps.parseOptions.enableReaction) {
+      if (smiles[pos] === ">" && chainDepth === 0 && groups.length > 0 && (ps.parseOptions.enableMultipleReactions ? true : ps.reactionIndexes.length < 2) && ps.parseOptions.enableReaction) {
         let ptr = ps.molecules.length - 1;
         dontBondNext = true;
         if (Object.keys(ps.molecules[ptr].groups).length > 0) {
@@ -131,14 +127,7 @@ export class SMILES {
           ptr--;
         }
         pos++;
-        // Change molecule types...
-        if (ps.reactionIndexes[0] === -1) { // ... > ...
-          ps.reactionIndexes[0] = ptr;
-          for (; ptr >= 0; ptr--) ps.molecules[ptr].type = "reactant";
-        } else if (ps.reactionIndexes[1] === -1) { /// ... > ... > ...
-          ps.reactionIndexes[1] = ptr;
-          for (; ptr > ps.reactionIndexes[0]; ptr--) ps.molecules[ptr].type = "reagent";
-        }
+        ps.reactionIndexes.push(ptr);
         continue;
       }
       //#endregion
@@ -196,6 +185,8 @@ export class SMILES {
               if (currentGroup === undefined) currentGroup = new Group({ chainDepth }).setSMILESposInfo(indexOffset + pos, extraction.extracted.length + 2);
               info.elements.forEach((value, key) => currentGroup.addElement(key, value));
               currentGroup.charge = info.charge;
+              if (info.atomicMass !== undefined) currentGroup.atomicMass = info.atomicMass;
+              else if (ps.parseOptions.showImplcitAtomicMass) currentGroup.atomicMass = masses[symbols.indexOf(Array.from(currentGroup.elements.keys())[0])];
 
               groups.push(currentGroup);
               ps.molecules[ps.molecules.length - 1].groups[currentGroup.ID] = currentGroup;
@@ -286,6 +277,7 @@ export class SMILES {
               // Add element to group information
               if (currentGroup === undefined) currentGroup = new Group({ chainDepth }).setSMILESposInfo(indexOffset + pos, extracted.length);
               currentGroup.addElement(extracted);
+              if (ps.parseOptions.showImplcitAtomicMass) currentGroup.atomicMass = masses[symbols.indexOf(Array.from(currentGroup.elements.keys())[0])];
               groups.push(currentGroup);
               ps.molecules[ps.molecules.length - 1].groups[currentGroup.ID] = currentGroup;
               currentGroup = undefined;
@@ -359,7 +351,7 @@ export class ParsedSMILES {
   public openRings: IRingMap;
   public rings: Ring[];
   public renderOptions: IRenderOptions; // Options to be used for rendering
-  public reactionIndexes: [number, number] = [-1, -1]; // Indexes of ">"
+  public reactionIndexes: number[]; // Indexes of ">"
 
   constructor(smiles: string, parseOptions: IParseOptions) {
     this.smiles = smiles;
@@ -370,6 +362,7 @@ export class ParsedSMILES {
     this.openRings = {};
     this.rings = [];
     this.renderOptions = createRenderOptsObject();
+    this.reactionIndexes = [];
   }
 
   /** Generate SMILES string from parsed data.
@@ -411,6 +404,7 @@ export class ParsedSMILES {
 
     let P = 3, x = P, y = P, w = x, h = y, minH = h, minW = w;
     const posHistory: { x: number, y: number, w: number, h: number, minW: number, minH: number }[] = [];
+    const isReaction = this.reactionIndexes.some(n => n !== -1);
     for (let i = 0; i < images.length; ++i) {
       const image = images[i];
 
@@ -424,16 +418,12 @@ export class ParsedSMILES {
       //   occtx.strokeStyle = "#000000";
       //   occtx.strokeRect(x, y, image.width, h - minH);
       // }
-      // occtx.fillStyle = "mediumblue";
-      // occtx.beginPath();
-      // occtx.arc(x, y, 4, 0, 6);
-      // occtx.fill();
       x += image.width;
 
       posHistory.push({ x, y, w, h, minW, minH });
 
-      if (this.molecules[i].type !== "generic" && this.molecules[i + 1]) {
-        const eq = this.molecules[i].type === this.molecules[i + 1].type; // Are molecules the same type?
+      if (isReaction && this.molecules[i + 1]) {
+        const eq = !this.reactionIndexes.some(n => n === i); // Are molecules the same type?
         const text = eq ? "+" : "→";
         const osize = renderOptions.font.size;
         occtx.font = renderOptions.font.set("size", 25).toString();
@@ -455,11 +445,10 @@ export class ParsedSMILES {
     }
 
     // Reagent brackets
-    if (renderOptions.reagentBracketWidth !== -1) {
-      if (this.reactionIndexes[0] !== this.reactionIndexes[1]) {
-        let i = this.reactionIndexes[0];
-        if (i !== -1) {
-          i++;
+    if (renderOptions.reagentBracketWidth !== -1 && this.reactionIndexes.length !== 0) {
+      for (let j = 0; j < this.reactionIndexes.length - 1; j += 2) {
+        if (this.reactionIndexes[j] !== this.reactionIndexes[j + 1]) {
+          let i = this.reactionIndexes[j] + 1;
           // "["
           let height = posHistory[i].h - posHistory[i].minH - 2 * P;
           occtx.strokeStyle = renderOptions.defaultAtomColor;
@@ -470,17 +459,16 @@ export class ParsedSMILES {
           occtx.lineTo(posHistory[i].x - images[i].width + renderOptions.reagentBracketWidth, posHistory[i].y + height - P);
           occtx.stroke();
           posHistory[i].x += renderOptions.reagentBracketWidth;
-        }
-        i = this.reactionIndexes[1];
-        if (i !== -1) {
+
+          i = this.reactionIndexes[j + 1];
           // "]"
-          let height = posHistory[i].h - posHistory[i].minH - 2 * P;
+          height = posHistory[i].h - posHistory[i].minH - 2 * P;
           occtx.strokeStyle = renderOptions.defaultAtomColor;
           occtx.beginPath();
-          occtx.moveTo(posHistory[i].x - renderOptions.reagentBracketWidth, posHistory[i].y + P);
-          occtx.lineTo(posHistory[i].x, posHistory[i].y + P);
-          occtx.lineTo(posHistory[i].x, posHistory[i].y + height - P);
-          occtx.lineTo(posHistory[i].x - renderOptions.reagentBracketWidth, posHistory[i].y + height - P);
+          occtx.moveTo(posHistory[i].x - 2*P - renderOptions.reagentBracketWidth, posHistory[i].y + P);
+          occtx.lineTo(posHistory[i].x - 2*P, posHistory[i].y + P);
+          occtx.lineTo(posHistory[i].x - 2*P, posHistory[i].y + height - P);
+          occtx.lineTo(posHistory[i].x - 2*P - renderOptions.reagentBracketWidth, posHistory[i].y + height - P);
           occtx.stroke();
           posHistory[i].x += renderOptions.reagentBracketWidth;
         }

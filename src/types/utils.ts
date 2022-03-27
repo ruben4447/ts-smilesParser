@@ -14,6 +14,7 @@ export interface IExtractBetweenInformation {
 export interface IParseInorganicString {
   elements: Map<string, number>;
   charge: number;
+  atomicMass?: number;
   endIndex: number;
   error?: string; // Error message if any
 }

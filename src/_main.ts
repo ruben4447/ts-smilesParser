@@ -35,6 +35,7 @@ function _main() {
 
   // parseSmiles("CS(=O)(=O)O.F>>C(F)(F)(F)S(=O)(=O)O.[H2]");
   parseSmiles("C=C>[H2].[Ni]>CC");
+  // parseSmiles("C1CCCCC1");
   // parseSmiles("C1C(=O)CC1");
   // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
 }
@@ -337,7 +338,7 @@ function parseSmiles(smiles: string) {
     const el = document.createElement("p");
     mdiv.appendChild(el);
 
-    el.insertAdjacentHTML("beforeend", `<span>&bull; ${molecule.type !== "generic" ? `<strong>${molecule.type[0].toUpperCase() + molecule.type.slice(1)}</strong>:` : ""} &nbsp; ${molecule.generateSMILES()} | ${molecule.generateMolecularFormula({}, true)} | Mr ${utils.numstr(molecule.calculateMr())} | `);
+    el.insertAdjacentHTML("beforeend", `<span>&bull; &nbsp; ${molecule.generateSMILES()} | ${molecule.generateMolecularFormula({}, true)} | Mr ${utils.numstr(molecule.calculateMr())} | `);
     const btn = document.createElement("button");
     btn.innerText = "Analyse";
     btn.addEventListener("click", () => {

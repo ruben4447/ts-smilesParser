@@ -3,7 +3,7 @@ import { BondType } from "./types/Bonds";
 import { IAtomCount } from "./types/SMILES";
 import { IExtractBetweenInformation, IParseDigitString, IParseInorganicString } from "./types/utils";
 
-export const getTextMetrics = (ctx: OffscreenCanvasRenderingContext2D, text: string) => {
+export const getTextMetrics = (ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D, text: string) => {
   const metrics = ctx.measureText(text);
   return {
     width: metrics.width,
@@ -12,7 +12,7 @@ export const getTextMetrics = (ctx: OffscreenCanvasRenderingContext2D, text: str
 };
 
 /** Render multiline text to a canvas. Return final y position. */
-export function canvasWriteText(ctx: CanvasRenderingContext2D, text: string, startX = 0, startY = 0, linePaddingMult = 1): number {
+export function canvasWriteText(ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D, text: string, startX = 0, startY = 0, linePaddingMult = 1): number {
   const lines = text.split(/\r\n|\r|\n/g);
   let x = startX, y = startY;
   for (const line of lines) {
@@ -155,12 +155,20 @@ export const numstr = (n: number) => n.toLocaleString("en-GB");
  * @throws AdvError
 */
 export function parseInorganicString(str: string): IParseInorganicString {
-  let info: IParseInorganicString = { elements: new Map(), charge: 0, endIndex: 0 }, i: number, lastAtom: string;
-  for (i = 0; i < str.length;) {
+  let info: IParseInorganicString = { elements: new Map(), charge: 0, endIndex: 0 }, i = 0, lastAtom: string;
+  // Atomic mass?
+  if (_regexNum.test(str[i])) {
+    let num = extractInteger(str.substr(i)), numStr = num.toString();
+    if (!isNaN(num)) {
+      info.atomicMass = num;
+      i += numStr.length;
+    }
+  }
+  for (; i < str.length;) {
     // Atom?
     let atom = extractElement(str.substr(i));
     if (atom) {
-      lastAtom = atom
+      lastAtom = atom;
       info.elements.set(atom, (info.elements.get(atom) ?? 0) + 1);
       i += atom.length;
     } else {
@@ -183,7 +191,6 @@ export function parseInorganicString(str: string): IParseInorganicString {
         } else {
           info.charge = charge;
           i += chargeStr.length;
-          break;
         }
       }
     }

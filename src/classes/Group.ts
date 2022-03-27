@@ -7,11 +7,11 @@ import type { Molecule } from "./Molecule";
 import { IVec } from "../types/utils";
 
 var ID = 0; // Next ID
-export const resetGroupID = () => ID = 0;
 
 export class Group {
   public readonly ID = ID++;
   public elements: Map<string, number>;
+  public atomicMass: number | undefined; // Atomic mass of FIRST element in this.elements
   public charge: number;
   public bonds: IBond[];
   public ringDigits: number[] = []; // Are we defined with any ring digits?
@@ -95,7 +95,12 @@ export class Group {
 
   /** Calculate Mr for a group */
   public calculateMr() {
-    return Array.from(this.elements).reduce((Mr, [atom, count]) => Mr + (masses[symbols.indexOf(atom)] ?? 0) * count, 0);
+    let Mr = Array.from(this.elements).reduce((Mr, [atom, count]) => Mr + (masses[symbols.indexOf(atom)] ?? 0) * count, 0);
+    if (this.atomicMass !== undefined) {
+      Mr -= masses[symbols.indexOf(Array.from(this.elements.keys())[0])];
+      Mr += this.atomicMass;
+    }
+    return Mr;
   }
 
   /** Count atoms in group */
@@ -173,13 +178,14 @@ export class Group {
 
   /** String representation of whole atom */
   public toString() {
-    let string = '';
-    if (this.charge === 0) {
-      string += this.inOrganicSubset() ? Array.from(this.elements.keys())[0] : `[${this.getElementString()}]`;
-    } else {
-      const charge = chargeToString(this.charge);
-      string += this.inOrganicSubset() ? `[${Array.from(this.elements.keys())[0]}${charge}]` : `[${this.getElementString()}${charge}]`;
+    let string = '', brackets = !this.inOrganicSubset();
+    if (this.atomicMass !== undefined) {
+      string += this.atomicMass.toString();
+      brackets = true;
     }
+    string += this.getElementString();
+    if (this.charge !== 0) string += chargeToString(this.charge);
+    if (brackets) string = "[" + string + "]";
     return string;
   }
 
@@ -238,6 +244,7 @@ export class Group {
     let elements = new Map(this.elements);
     if (extraHs) elements.set("H", (elements.get("H") ?? 0 + extraHs));
     let str = Array.from(elements).map(([element, count]) => count === 1 ? element : element + count).join("");
+    if (this.atomicMass !== undefined) str = this.atomicMass + str;
     if (this.charge !== 0) {
       let chargeStr = ((this.charge === 1 || this.charge === -1) ? '' : Math.abs(this.charge)) + (this.charge < 0 ? "-" : "+");
       str = (elements.size === 1 && Array.from(elements.values())[0] === 1) ? str + chargeStr : "[" + str + "]" + chargeStr;
@@ -249,6 +256,7 @@ export class Group {
 
   /** Render as text */
   public renderAsText(ctx: OffscreenCanvasRenderingContext2D, pos: IVec, re?: IRenderOptions, extraHs = 0) {
+    if (isNaN(pos.x) || isNaN(pos.y)) return pos;
     if (re === undefined) re = defaultRenderOptsObject;
     ctx.font = re.font.toString();
     let x = pos.x, y = pos.y, elements = new Map(this.elements);
@@ -256,6 +264,7 @@ export class Group {
     let brackets = this.charge !== 0 && !(elements.size === 1 && Array.from(elements.values())[0] === 1);
     const items: { text: string, pos: -1 | 0 | 1, colEquiv?: string }[] = [];
     if (brackets) items.push({ text: "[", pos: 0 });
+    if (this.atomicMass !== undefined) items.push({ text: this.atomicMass.toString(), pos: 1, colEquiv: Array.from(elements.keys())[0] });
     elements.forEach((count, el) => {
       items.push({ text: el, pos: 0 });
       if (count !== 1) items.push({ text: count.toString(), pos: -1, colEquiv: el });

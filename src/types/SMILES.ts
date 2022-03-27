@@ -18,9 +18,11 @@ export interface IParseOptions {
   enableAromaticity: boolean;
   enableSeperatedStructures: boolean;
   enableReaction: boolean;
+  enableMultipleReactions: boolean; // Allow chained reactions e.g. ... > ... > ... > ... > ...
   cumulativeCharge?: boolean; // Allow O{-}{-} ?
   checkBondCount?: boolean;
   addImplicitHydrogens?: boolean; // Add implicit Hydrogens e.g. "C" -> "C([H])([H])([H])([H])"
+  showImplcitAtomicMass?: boolean; // Show implicit atomic mass on groups?
 }
 
 export const createParseOptionsObject = (): IParseOptions => ({
@@ -31,9 +33,11 @@ export const createParseOptionsObject = (): IParseOptions => ({
   enableAromaticity: true,
   enableSeperatedStructures: true,
   enableReaction: true,
+  enableMultipleReactions: true,
   cumulativeCharge: true,
   checkBondCount: true,
   addImplicitHydrogens: true,
+  showImplcitAtomicMass: false,
 });
 
 export interface IElementToIonMap {
@@ -94,6 +98,7 @@ export const createRenderOptsObject = (): IRenderOptions => ({
   defaultAtomColor: "#000000",
   atomColors: {
     B: "#E67E22",
+    C: "#000000",
     N: "#3498DB",
     O: "#E74C3C",
     P: "#D35400",
