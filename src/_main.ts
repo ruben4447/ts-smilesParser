@@ -33,8 +33,8 @@ function _main() {
   tabs.open("smiles");
   document.body.appendChild(tabContainer);
 
-  parseSmiles("FC(F)(F)S(=O)(=O)O.F");
-  // parseSmiles("C=CO");
+  // parseSmiles("CS(=O)(=O)O.F>>C(F)(F)(F)S(=O)(=O)O.[H2]");
+  parseSmiles("C=C>[H2].[Ni]>CC");
   // parseSmiles("C1C(=O)CC1");
   // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
 }
@@ -322,10 +322,10 @@ function parseSmiles(smiles: string) {
 
   const image = ps.render();
 
-   // Get distance from (0,0) such that the molecule is centred
+  // Get distance from (0,0) such that the molecule is centred
   let θ = Math.atan2(canvas.width - image.width, canvas.height - image.height);
   let h = 0.5 * Math.hypot(canvas.height - image.height, canvas.width - image.width);
-  ctx.putImageData(image, h * Math.sin(θ), h * Math.cos(θ));
+  ctx.putImageData(image, h * Math.sin(θ), 0 /*h * Math.cos(θ)*/);
 
   // SMILES
   elOutput.innerHTML += `<b>SMILES</b>: ${ps.generateSMILES()} | Took <em>${utils.numstr(parseTime)}</em> ms | Created ${utils.numstr(ps.molecules.length)} molecule${ps.molecules.length === 1 ? '' : 's'}`;
@@ -337,7 +337,7 @@ function parseSmiles(smiles: string) {
     const el = document.createElement("p");
     mdiv.appendChild(el);
 
-    el.insertAdjacentHTML("beforeend", `<span>&bull; &nbsp; ${molecule.generateSMILES()} | ${molecule.generateMolecularFormula({}, true)} | Mr ${utils.numstr(molecule.calculateMr())} | `);
+    el.insertAdjacentHTML("beforeend", `<span>&bull; ${molecule.type !== "generic" ? `<strong>${molecule.type[0].toUpperCase() + molecule.type.slice(1)}</strong>:` : ""} &nbsp; ${molecule.generateSMILES()} | ${molecule.generateMolecularFormula({}, true)} | Mr ${utils.numstr(molecule.calculateMr())} | `);
     const btn = document.createElement("button");
     btn.innerText = "Analyse";
     btn.addEventListener("click", () => {

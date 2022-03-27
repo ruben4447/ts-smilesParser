@@ -1,5 +1,3 @@
-import type { Group } from "../classes/Group";
-import type { Molecule } from "../classes/Molecule";
 import type { Ring } from "../classes/Rings";
 import { BondType } from "./Bonds";
 
@@ -19,6 +17,7 @@ export interface IParseOptions {
   enableRings: boolean;
   enableAromaticity: boolean;
   enableSeperatedStructures: boolean;
+  enableReaction: boolean;
   cumulativeCharge?: boolean; // Allow O{-}{-} ?
   checkBondCount?: boolean;
   addImplicitHydrogens?: boolean; // Add implicit Hydrogens e.g. "C" -> "C([H])([H])([H])([H])"
@@ -31,6 +30,7 @@ export const createParseOptionsObject = (): IParseOptions => ({
   enableRings: true,
   enableAromaticity: true,
   enableSeperatedStructures: true,
+  enableReaction: true,
   cumulativeCharge: true,
   checkBondCount: true,
   addImplicitHydrogens: true,
@@ -85,6 +85,7 @@ export interface IRenderOptions {
   smallFont: Font;
   boxMolecules: boolean; // Render molecules in boxes
   moleculePadding: number;
+  reagentBracketWidth: number; // Width of brackets surrounding reagents. -1 to disable brackets.
 }
 
 export const createRenderOptsObject = (): IRenderOptions => ({
@@ -102,7 +103,7 @@ export const createRenderOptsObject = (): IRenderOptions => ({
     I: "#934DB0",
     Br: "#D35400"
   },
-  bondLength: 50,
+  bondLength: 30,
   textPadding: 1,
   renderImplicit: true,
   collapseH: true,
@@ -111,6 +112,7 @@ export const createRenderOptsObject = (): IRenderOptions => ({
   smallFont: new Font().set("family", "Arial").set("size", 10),
   boxMolecules: true,
   moleculePadding: 10,
+  reagentBracketWidth: 5,
 });
 
 export const defaultRenderOptsObject = createRenderOptsObject();
