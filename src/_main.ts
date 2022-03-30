@@ -12,7 +12,7 @@ import { createParseOptionsObject } from './types/SMILES';
 globalThis.$globals = $globals;
 
 var canvas: HTMLCanvasElement, env: SMILES;
-var inputSMILES: HTMLInputElement, elOutput: HTMLElement, inputSplitFormula: HTMLInputElement, selectBoolOption: HTMLSelectElement, inputBoolOption: HTMLInputElement;
+var inputSMILES: HTMLInputElement, elOutput: HTMLElement, selectBoolOption: HTMLSelectElement, inputBoolOption: HTMLInputElement;
 var parseTime = 0;
 var prepAnalyseMolecule: (mol: Molecule) => void;
 
@@ -20,8 +20,12 @@ function _main() {
   env = new SMILES();
   $globals.env = env;
   env.parseOptions.addImplicitHydrogens = true;
-  env.parseOptions.checkBondCount = true;
-  env.parseOptions.enableRings = true;
+  env.parseOptions.checkBondCount = !true;
+  // env.renderOptions.renderImplicit = false;
+  env.renderOptions.collapseH = true;
+  env.renderOptions.bondLength = 40;
+  env.renderOptions.debugShowGroupIDs = true;
+  env.renderOptions.debugShowRingIDs = true;
 
   const tabContainer = document.createElement('div');
   const tabMap = Tabs.createMap();
@@ -33,11 +37,19 @@ function _main() {
   tabs.open("smiles");
   document.body.appendChild(tabContainer);
 
+  // TODO
+  // - If aromatic, all bonds must be aromatic
+  // - Rings: lowercase ring atoms mean aromatic ring
+  // - Ring: support ring members bridging molecules (this.getAllBonds -> search all molecules now)
+  // - SMILES generation: show aromatic bonds
+
   // parseSmiles("CS(=O)(=O)O.F>>C(F)(F)(F)S(=O)(=O)O.[H2]");
-  parseSmiles("C=C>[H2].[Ni]>CC");
-  // parseSmiles("C1CCCCC1");
-  // parseSmiles("C1C(=O)CC1");
+  // parseSmiles("C=C>[H2].[Ni]>CC");
+  // parseSmiles("C.ClCl>>CCl.ClCCl.C(Cl)(Cl)Cl.ClC(Cl)(Cl)Cl.[H]Cl");
   // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
+  // parseSmiles("C1CCCCO1");
+  parseSmiles("C1:C:C:C:C:C1");
+  // parseSmiles("CC1:C(:C:C(:C:C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
 }
 
 function generateSMILESContent() {
@@ -52,14 +64,7 @@ function generateSMILESContent() {
   inputSMILES.addEventListener('input', () => parseSmiles(inputSMILES.value));
   inputSMILES.style.width = "40%";
 
-  p.insertAdjacentHTML("beforeend", " | Simple Formula ");
-  inputSplitFormula = document.createElement("input");
-  inputSplitFormula.type = "checkbox";
-  inputSplitFormula.checked = false;
-  inputSplitFormula.addEventListener('change', () => parseSmiles(inputSMILES.value));
-  p.appendChild(inputSplitFormula);
-
-  p.insertAdjacentHTML("beforeend", " | Parse Option: ");
+  p.insertAdjacentHTML("beforeend", " | Option: ");
   selectBoolOption = document.createElement("select");
   p.appendChild(selectBoolOption);
   // Allow user to configure stuff
@@ -132,7 +137,6 @@ function generateAnalyseMoleculeContent() {
     const table = document.createElement('table'), tbody = table.createTBody();
     p.appendChild(table);
     tbody.insertAdjacentHTML("beforeend", `<tr><th>SMILES</th><td>${molecule.generateSMILES()}</td></tr>`);
-    tbody.insertAdjacentHTML("beforeend", `<tr><th>Expl. SMILES</th><td>${molecule.generateSMILES(true)}</td></tr>`);
     tbody.insertAdjacentHTML("beforeend", `<tr><th>Mol. Mass</th><td>${utils.numstr(molecule.calculateMr())} g<sup>-1</sup> mol</td></tr>`);
     tbody.insertAdjacentHTML("beforeend", `<tr><th title="Molecular Formula: Actual number of atoms of each element in a molecule">Molecular F.</th><td>${molecule.generateMolecularFormula({}, true)}</td></tr>`);
     tbody.insertAdjacentHTML("beforeend", `<tr><th title="Empirical Formula: Simplest whole number ratio of atoms of each element present in a compound">Empirical F.</th><td>${molecule.generateEmpiricalFormula(true)}</td></tr>`);
@@ -149,89 +153,93 @@ function generateAnalyseMoleculeContent() {
     const organicGroups: { [fgid: number]: IGroupStrMap[] } = [];
     for (const id in moleculeTypes) {
       const groups = moleculeTypes[id].test ? moleculeTypes[id].test(molecule) : [];
-      if (groups.length !== 0) {
-        const li = document.createElement("li");
-        li.insertAdjacentHTML("beforeend", `<span>${moleculeTypes[id].name}</span><br>`);;
-        fgul.appendChild(li);
-        const ul = document.createElement("ul");
-        li.appendChild(ul);
-        reactions.forEach((info, i) => {
-          if (info.start === +id || moleculeTypes[id].variantOf === info.start) {
-            const li = document.createElement("li");
-            li.insertAdjacentHTML("beforeend", `<span> &rarr; ${moleculeTypes[info.end].name}</span> &nbsp;`);
-            const btn = document.createElement("button");
-            btn.addEventListener("click", () => {
-              let text = `Carry out reaction ${moleculeTypes[info.start].name} -> ${moleculeTypes[info.end].name} ?${info.name ? '\nReaction Name: ' + info.name : ''}${info.type ? '\nReaction Mechanism: ' + info.type : ''}${info.conditions ? '\nConditions: ' + info.conditions : ''}${info.reagents ? '\nReagents: ' + info.reagents : ''}`;
-              let resp = info.provideReactant ? prompt(`${text}\n${info.provideReactant.prompt}`, info.provideReactant.default) : confirm(text);
-              let ok: { ok: boolean, data?: string } = { ok: true };
-              if (resp) {
-
-                if (info.react) {
-                  let reactant: Molecule;
-                  if (info.provideReactant && typeof resp === "string") {
-                    const sp = new SMILES();
-                    const optOverride: { [opt: string]: boolean } = info.provideReactant.smilesOpts ?? {};
-                    optOverride.enableSeperatedStructures = false;
-                    try {
-                      let si = sp.parse(resp, optOverride);
-                      reactant = si.molecules[0];
-                    } catch (e) {
-                      ok.ok = false;
-                      ok.data = e.message;
-                    }
-                  }
-  
-                  if (ok.ok) {
-                    ok = info.react(molecule, organicGroups[+id][0], $globals.reactionOpts, reactant);
-                    if (!info.reactOnce && moleculeTypes[id].test) {
-                      while (ok === undefined) {
-                        let groups = moleculeTypes[id].test(molecule);
-                        if (groups.length === 0) break;
-                        ok = info.react(molecule, groups[0], $globals.reactionOpts, reactant);
-                      }
-                    }
-                  }
-                } else {
-                  ok.ok = false;
-                  ok.data = "Cannot carry out reaction";
-                }
-              }
-
-              if (ok.ok) {
-                analyse();
-                if (ok.data) alert(ok.data);
-              } else {
-                alert("Reaction failed: " + ok.data);
-              }
-            });
-            btn.innerText = "Go";
-            li.appendChild(btn);
-            ul.appendChild(li);
-          }
-        });
-        organicGroups[id] = groups;
-      }
+      if (groups.length !== 0) organicGroups[id] = groups;
     }
 
     // Remove duplicate groups
-    // for (const id2 in organicGroups) {
-    //   console.log(moleculeTypes[id2].name, moleculeTypes[id2].removeIfPresent, +id);
-    //   if (moleculeTypes[id2].removeIfPresent?.includes(+id)) {
-    //     console.log(moleculeTypes[id2].name)
-    //     for (let i = groups.length - 1; i >= 0; i--) {
-    //       for (let j = 0; j < organicGroups[id2].length; j++) {
-    //         if (groups[i][1] && organicGroups[id2][1] && groups[i][1].smilesStringPosition && organicGroups[+id2][1][j].smilesStringPosition) {
-    //           groups.splice(i, 1);
-    //         }
-    //       }
-    //     }
-    //   }
-    // }
+    for (let ogid in organicGroups) {
+      if (moleculeTypes[ogid].removeIfPresent) {
+        for (const gid of moleculeTypes[ogid].removeIfPresent) {
+          let remove = false;
+          if (organicGroups[gid]) {
+            for (const ogroup of organicGroups[ogid]) {
+              for (const ggroup of organicGroups[gid]) {
+                remove = ogroup[1].ID === ggroup[1].ID;
+                if (remove) break;
+              }
+              if (remove) break;
+            }
+          }
+          if (remove) delete organicGroups[gid];
+        }
+      }
+    }
+
+    // Render
+    for (const id in organicGroups) {
+      const li = document.createElement("li");
+      li.insertAdjacentHTML("beforeend", `<span>${moleculeTypes[id].name}</span><br>`);;
+      fgul.appendChild(li);
+      const ul = document.createElement("ul");
+      li.appendChild(ul);
+      reactions.forEach((info, i) => {
+        if (info.start === +id || moleculeTypes[id].variantOf === info.start) {
+          const li = document.createElement("li");
+          li.insertAdjacentHTML("beforeend", `<span> &rarr; ${moleculeTypes[info.end].name}</span> &nbsp;`);
+          const btn = document.createElement("button");
+          btn.addEventListener("click", () => {
+            let text = `Carry out reaction ${moleculeTypes[info.start].name} -> ${moleculeTypes[info.end].name} ?${info.name ? '\nReaction Name: ' + info.name : ''}${info.type ? '\nReaction Mechanism: ' + info.type : ''}${info.conditions ? '\nConditions: ' + info.conditions : ''}${info.reagents ? '\nReagents: ' + info.reagents : ''}`;
+            let resp = info.provideReactant ? prompt(`${text}\n${info.provideReactant.prompt}`, info.provideReactant.default) : confirm(text);
+            let ok: { ok: boolean, data?: string, cont?: boolean } = { ok: true };
+            if (resp) {
+              if (info.react) {
+                let reactant: Molecule;
+                if (info.provideReactant && typeof resp === "string") {
+                  const sp = new SMILES();
+                  const optOverride: { [opt: string]: boolean } = { ...info.provideReactant.smilesOpts };
+                  optOverride.enableSeperatedStructures = false;
+                  try {
+                    let si = sp.parse(resp, optOverride);
+                    reactant = si.molecules[0];
+                  } catch (e) {
+                    ok.ok = false;
+                    ok.data = e.message;
+                  }
+                }
+
+                if (ok.ok) {
+                  ok = info.react(molecule, organicGroups[+id][0], $globals.reactionOpts, reactant);
+                  if (!info.reactOnce && moleculeTypes[id].test) {
+                    while (ok.ok || ok.cont) {
+                      let groups = moleculeTypes[id].test(molecule);
+                      if (groups.length === 0) break;
+                      ok = info.react(molecule, groups[0], $globals.reactionOpts, reactant);
+                    }
+                  }
+                }
+              } else {
+                ok.ok = false;
+                ok.data = "Cannot carry out reaction";
+              }
+            }
+
+            if (ok.ok) {
+              analyse();
+              if (ok.data) alert(ok.data);
+            } else {
+              alert("Reaction failed: " + ok.data);
+            }
+          });
+          btn.innerText = "Go";
+          li.appendChild(btn);
+          ul.appendChild(li);
+        }
+      });
+    }
   };
 
   let p = document.createElement("p");
   container.appendChild(p);
-
   container.insertAdjacentHTML("beforeend", "<h3>Functional Groups</h3>");
   const div = document.createElement("div");
   const fgul = document.createElement("ul");

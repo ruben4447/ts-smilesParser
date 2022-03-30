@@ -81,15 +81,21 @@ export interface IRenderOptions {
   defaultAtomColor: string;
   atomColors: { [el: string]: string };
   bondLength: number;
+  bondWidth: number;
   textPadding: number; // Padding between letters in text
   renderImplicit: boolean; // Render implicit molecules?
   collapseH: boolean;
   bondGap: number; // Gap between double and triple bonds
   font: Font;
   smallFont: Font;
+  aromaticRingDist: number;
+  ringRestrictAngleSmall: boolean; // Bigger or smaller restrict space
   boxMolecules: boolean; // Render molecules in boxes
   moleculePadding: number;
   reagentBracketWidth: number; // Width of brackets surrounding reagents. -1 to disable brackets.
+
+  debugShowGroupIDs?: boolean;
+  debugShowRingIDs?: boolean;
 }
 
 export const createRenderOptsObject = (): IRenderOptions => ({
@@ -108,12 +114,15 @@ export const createRenderOptsObject = (): IRenderOptions => ({
     I: "#934DB0",
     Br: "#D35400"
   },
-  bondLength: 30,
+  bondLength: 25,
+  bondWidth: 1,
   textPadding: 1,
   renderImplicit: true,
   collapseH: true,
   bondGap: 5,
-  font: new Font().set("family", "Arial").set("size", 16),
+  aromaticRingDist: 0.71,
+  ringRestrictAngleSmall: true,
+  font: new Font().set("family", "Arial").set("size", 15),
   smallFont: new Font().set("family", "Arial").set("size", 10),
   boxMolecules: true,
   moleculePadding: 10,

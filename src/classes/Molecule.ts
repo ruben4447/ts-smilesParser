@@ -144,7 +144,7 @@ export class Molecule {
       const group = this.groups[gid], bonds = this.getBondCount(group.ID);
       if (group.charge === 0 && group.inOrganicSubset()) {
         let el = Array.from(group.elements.keys())[0] as string;
-        if (!organicSubset[el].some((n: number) => n === bonds)) {
+        if (!isNaN(organicSubset[el][0]) && !organicSubset[el].some((n: number) => n === bonds)) {
           const error = new AdvError(`Bond Error: invalid bond count for organic atom '${el}': ${bonds}. Expected ${organicSubset[el].join(' or ')}.`, el).setColumnNumber(group.smilesStringPosition);
           return { group, element: el, error };
         }
@@ -348,11 +348,10 @@ export class Molecule {
       let j = 0, segStr = '';
       map.forEach((count, el) => {
         let str = count === 1 ? el : el + (html ? "<sub>" + numstr(count) + "</sub>" : count.toString());
-        if (j > 0 && j < map.size - 1) str = "(" + str + ")";
+        if (j > 0 && j < map.size - 1 && count > 1) str = "(" + str + ")";
         j++;
         segStr += str;
       });
-      // if (ei > 0 && ei < elements.length - 1 && map.size > 1) segStr = "(" + segStr + ")";
       if (collapseSucecssiveGroups) {
         if (lastSegment === undefined) {
           lastSegment = segStr;
@@ -435,95 +434,180 @@ export class Molecule {
     return smiles;
   }
 
+  /** Find all paths from one group to another. Return array of bond position IDs */
+  public pathfind(startID: number, endID: number) {
+    const paths: number[][] = [];
+    const current: number[] = []; // Current path (bond indexes from startID)
+    const currGroups: number[] = [] // Stack of groups so we can backtrack
+    const explored = new Map<number, number>(); // Maps group ID to the bond it should start iterating at
+    const allBonds = new Map<number, IBond[]>(); // Map all group IDs to (full) bond array
+    for (let gid in this.groups) {
+      explored.set(+gid, 0);
+      allBonds.set(+gid, this.getAllBonds(+gid));
+    }
+
+    currGroups.push(startID);
+
+    while (currGroups.length > 0) {
+      const gid = currGroups[currGroups.length - 1];
+      if (gid === endID) { // At end?
+        paths.push([ ...current ]);
+        current.pop();
+        currGroups.pop();
+      } else {
+        // Explore each bond
+        const bonds = allBonds.get(gid), bi = explored.get(gid);
+        if (bi < bonds.length) {
+          // Backtrack?
+          if (bonds[bi].dest === currGroups[currGroups.length - 2]) {
+            // Pass
+          } else {
+            current.push(bi);
+            currGroups.push(bonds[bi].dest);
+          }
+          explored.set(gid, bi + 1); // Iterate to next bond
+        } else { // Fully explored from this group
+          currGroups.pop();
+          current.pop();
+        }
+      }
+    }
+
+    return paths;
+  }
+
+  /** From starting group ID, given an array of bond indexes to follow (all bonds from this.getAllBonds) return array of group IDs */
+  public traceBondPath(startID: number, path: number[]) {
+    return path.reduce((p, c, i) => p.push(this.getAllBonds(p[i])[c].dest) && p, [startID]);
+  }
+
   /** Return position vectors of each Group around (0,0) */
   public getGroupPositions(ctx: OffscreenCanvasRenderingContext2D, re?: IRenderOptions) {
     if (Object.keys(this.groups).length === 0) return {};
     if (re === undefined) re = defaultRenderOptsObject;
 
-    const collision = (x: number, y: number) => {
-      const vecs = Object.values(posData);
-      let w = 20, h = 10;
-      for (const vec of vecs) {
-        if (vec.x < x + w/2 &&
-          vec.x + w/2 > x &&
-          vec.y < y + h/2 &&
-          h/2 + vec.y > y) return vec;
-      }
-      return false;
-    }
-
+    const collision = (rec: IRec) => Object.values(posData).find(rec2 => rec.x < rec2.x + rec2.w && rec.x + rec.w > rec2.x && rec.y < rec2.y + rec2.h && rec.h + rec.y > rec2.y) ?? false;
     const posData: { [gid: number]: IRec } = {};
-    const processStack: { gid: number, θu: number, θv: number }[] = []; // Groups to process
+    const processStack: number[] = []; // Stack of group IDs to process
     const doneGroups = new Set<number>();
+    const inRings = new Set<number>(); // Set of all groups which have been sorted into a ring structure
+    const rings: { [rdigit: number]: { minX: number, maxX: number, minY: number, maxY: number} } = {};
+    const angles = new Map<number, [number, number]>(); // Group IDs to angle [start, end]
     let iters = 0;
     
     // For each group, populate text width/height
     for (let id in this.groups) {
-      let { width: w, height: h } = this.groups[+id].getRenderAsTextDimensions(ctx, re, re.collapseH ? this.countBondedElements(+id, "H", re.renderImplicit) : 0);
+      angles.set(+id, [0, 2*Math.PI]);
+      let { width: w, height: h } = this.groups[+id].getRenderAsTextDimensions(ctx, re, re.renderImplicit && re.collapseH ? this.getAllBonds(+id).filter(bond => this.groups[bond.dest].isImplicit && this.groups[bond.dest].isElement("H")).length : 0);
       posData[id] = { x: NaN, y: NaN, w, h };
     }
 
     // Start with forst group
     let gid = +Object.keys(this.groups)[0];
-    processStack.push({ gid, θu: 0, θv: 2*Math.PI });
+    processStack.push(gid);
     posData[gid].x = 0;
     posData[gid].y = 0;
 
     while (processStack.length !== 0) {
-      const data = processStack.pop();
-      if (!doneGroups.has(data.gid)) {
-        const rec = posData[data.gid]; // Current position vector
+      const gid = processStack.pop();
+      if (!doneGroups.has(gid)) {
+        const rec = posData[gid]; // Current position vector
         // Get bonds
-        let bonds = this.getAllBonds(data.gid);
+        let bonds = this.getAllBonds(gid);
         if (!re.renderImplicit) bonds = bonds.filter(bond => !this.groups[bond.dest].isImplicit);
-        else if (re.collapseH) bonds = bonds.filter(bond => !this.groups[bond.dest].isElement("H"));
+        else if (re.collapseH) bonds = bonds.filter(bond => !(this.groups[bond.dest].isImplicit && this.groups[bond.dest].isElement("H")));
 
-        let θu = data.θu, θv = data.θv; // Start/end angle
-        let θi = (θv - θu) / (iters === 0 ? bonds.length : bonds.length - 1); // angle increment
+        if (this.groups[gid].ringDigits.length === 1) {
+          const ring = this.rings.find(ring => ring.digit === this.groups[gid].ringDigits[0]);
+          if (rings[ring.digit] === undefined) {
+            const interior = 2*Math.PI / ring.members.length; // Interior angle
+            const rot = Math.PI/2 - interior/2;
+            const ext = Math.PI - 2*rot;
+            let angle = angles.get(gid)[0] + rot;
+            let x = rec.x, y = rec.h, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            for (let k = 0; k < ring.members.length; k++) {
+              inRings.add(ring.members[k]);
+              const rec = posData[ring.members[k]];
+              let [dx, dy] = rotateCoords(re.bondLength + rec.w, angle);
+              rec.x = x;
+              rec.y = y;
+              if (x > maxX) maxX = x;
+              if (x < minX) minX = x;
+              if (y > maxY) maxY = y;
+              if (y < minY) minY = y;
+              x += dx;
+              y += dy;
+              const angleData = angles.get(ring.members[k]);
+              if (re.ringRestrictAngleSmall) {
+                angleData[1] = (angle - rot) % (2*Math.PI);
+                angleData[0] = angleData[1] - Math.PI;
+              } else {
+                angleData[1] = (angle) % (2*Math.PI);
+                angleData[0] = (angleData[1] + 2*rot) % (2*Math.PI);
+              }
+              angle -= ext;
+            }
+            rings[ring.digit] = { minX, maxX, minY, maxY };
+          }
+        }
+
+        let [ θu, θv ] = angles.get(gid); // Start/end angle
         if (θv < θu) [θu, θv] = [θv, θu];
+        let θi = (θv - θu) / (iters === 0 ? bonds.length : bonds.length - 1); // angle increment
         for (let i = 0, θ = θu; i < bonds.length; i++, θ += θi) {
           let did = bonds[i].dest, θc = θ; // Copy angle
           if (!doneGroups.has(did)) {
             // Avoid collisions
-            let bondLength = re.bondLength + rec.w / 2 + posData[did].w / 2; // Account for overlap from text
-            let num = 1, denom = 2; // For finding fraction of angle
-            let x: number, y: number;
-            while (true) {
-              ([x, y] = rotateCoords(bondLength, θc));
-              if (collision(rec.x + x, rec.y + y)) {
-                θc += θi * (num / denom);
-                if (num >= denom) {
-                  denom++;
-                  num = 1;
-                }
-                num++;
-              } else break;
+            if (!inRings.has(did)) {
+              let bondLength = re.bondLength + rec.w / 2 + posData[did].w / 2; // Account for overlap from text
+              let num = 1, denom = 2; // For finding fraction of angle
+              let x: number, y: number;
+              while (true) {
+                ([x, y] = rotateCoords(bondLength, θc));
+                const rec1 = { ...rec };
+                rec1.x += x;
+                rec1.y += y;
+                if (collision(rec1)) {
+                  θc += θi * (num / denom);
+                  if (num >= denom) {
+                    denom++;
+                    num = 1;
+                  } else {
+                    num++;
+                  }
+                } else break;
+              }
+              posData[did].x = rec.x + x;
+              posData[did].y = rec.y + y;
             }
-            posData[did].x = rec.x + x;
-            posData[did].y = rec.y + y;
-            // processStack.push({ gid: did, θu: θc, θv: 2 * Math.PI + θc });
-            processStack.push({ gid: did, θu: 0, θv: 2 * Math.PI });
+            processStack.push(did);
           }
         }
-        doneGroups.add(data.gid);
+        doneGroups.add(gid);
         iters++;
       }
     }
 
-    return posData;
+    return { pos: posData, rings };
   }
 
   /** Return image of rendered molecule */
   public render(ctx: OffscreenCanvasRenderingContext2D, re?: IRenderOptions): ImageData {
     if (Object.values(this.groups).length === 0) return ctx.createImageData(1, 1); // "Empty" image
     if (re === undefined) re = createRenderOptsObject();
-    const positions = this.getGroupPositions(ctx, re), rects = Object.values(positions);
+    const { pos: positions, rings } = this.getGroupPositions(ctx, re), rects = Object.values(positions);
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const rec of rects) {
       if (rec.x - rec.w / 2 < minX) minX = rec.x - rec.w / 2;
       if (rec.x + rec.w / 2 > maxX) maxX = rec.x + rec.w / 2;
       if (rec.y - rec.h / 2 < minY) minY = rec.y - rec.h / 2;
       if (rec.y + rec.h / 2 > maxY) maxY = rec.y + rec.h / 2;
+    }
+    for (let id in rings) {
+      if (rings[id].minX < minX) minX = rings[id].minX;
+      if (rings[id].maxX > maxX) maxX = rings[id].maxX;
+      if (rings[id].minY < minY) minY = rings[id].minY;
+      if (rings[id].maxY > maxY) maxY = rings[id].maxY;
     }
     minX -= re.moleculePadding;
     maxX += re.moleculePadding;
@@ -532,9 +616,15 @@ export class Molecule {
 
     // Make sure no coordinate is negative!
     let dx = Math.abs(minX), dy = Math.abs(minY);
-    for (const vec of rects) {
-      vec.x += dx;
-      vec.y += dy;
+    for (const rec of rects) {
+      rec.x += dx;
+      rec.y += dy;
+    }
+    for (const digit in rings) {
+      rings[digit].minX += dx;
+      rings[digit].maxX += dx;
+      rings[digit].minY += dy;
+      rings[digit].maxY += dy;
     }
 
     // Fill background
@@ -543,7 +633,7 @@ export class Molecule {
 
     // Bonds
     ctx.strokeStyle = re.defaultAtomColor;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = re.bondWidth;
     const GSTART = 0.35, GSTOP = 0.65;
     for (const id in positions) {
       if (positions[id] && !isNaN(positions[id].x) && !isNaN(positions[id].y)) {
@@ -552,7 +642,7 @@ export class Molecule {
           if (positions[bond.dest] && !isNaN(positions[bond.dest].x) && !isNaN(positions[bond.dest].y)) {
             const c2 = this.groups[bond.dest].getRenderColor(re);
 
-            if (bond.bond === "-" || bond.bond === "#") {
+            if (bond.bond === "-" || bond.bond === "#" || bond.bond === ":") {
               let grad = ctx.createLinearGradient(positions[id].x, positions[id].y, positions[bond.dest].x, positions[bond.dest].y);
               grad.addColorStop(GSTART, c1);
               grad.addColorStop(GSTOP, c2);
@@ -588,12 +678,39 @@ export class Molecule {
       }
     }
 
+    // Loop through rings
+    for (let digit in rings) {
+      const { minX, maxX, minY, maxY } = rings[digit], ring = this.rings.find(ring => ring.digit === +digit);
+      const rx = (maxX - minX) / 2, ry = (maxY - minY) / 2;
+      // Aromatic?
+      if (ring.isAromatic) {
+        ctx.beginPath();
+        ctx.lineWidth = re.bondWidth;
+        ctx.strokeStyle = re.defaultAtomColor;
+        const r = Math.min(rx*re.aromaticRingDist, ry*re.aromaticRingDist);
+        ctx.arc(minX + rx, minY + ry, r, 0, 2*Math.PI);
+        ctx.stroke();
+      }
+      // Debug: show ID?
+      if (re.debugShowRingIDs) {
+        ctx.fillStyle = "mediumblue";
+        ctx.font = "12px Courier New";
+        ctx.fillText(ring.ID.toString(), minX + rx, minY + ry);
+      }
+    }
+
     for (const id in positions) {
       let rec = positions[id], group = this.groups[id], P = 4, extraHs = 0;
-      if (re.collapseH) extraHs = this.getAllBonds(group.ID).filter(bond => (this.groups[bond.dest].isImplicit ? re.renderImplicit : true) && this.groups[bond.dest].isElement("H")).length;
+      if (re.renderImplicit && re.collapseH) extraHs = this.getAllBonds(group.ID).filter(bond => (this.groups[bond.dest].isImplicit ? re.renderImplicit : false) && this.groups[bond.dest].isElement("H")).length;
       ctx.fillStyle = re.bg;
       ctx.fillRect(rec.x - rec.w / 2 - P, rec.y - rec.h / 2 - P, rec.w + 2 * P, rec.h + 2 * P);
       group.renderAsText(ctx, { x: rec.x - rec.w / 2, y: rec.y + rec.h * 0.25 }, re, extraHs);
+
+      if (re.debugShowGroupIDs) {
+        ctx.fillStyle = "mediumblue";
+        ctx.font = "12px Courier New";
+        ctx.fillText(group.ID.toString(), rec.x + rec.w / 2, rec.y);
+      }
     }
 
     // Return bounding box

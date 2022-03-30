@@ -42,7 +42,7 @@ export interface IReactionInfo {
   end: number; // ID of ending molecule type
   reagents?: string; // Reagents of reaction
   conditions?: string; // Condition of reaction
-  react?: (mol: Molecule, fgroup: IGroupStrMap, opts: IReactionOpts, reactant?: Molecule) => { ok: boolean; data?: string }; // Carry out reaction
+  react?: (mol: Molecule, fgroup: IGroupStrMap, opts: IReactionOpts, reactant?: Molecule) => { ok: boolean; data?: string, cont?: boolean }; // Carry out reaction
   reactOnce?: boolean; // Call .react only once? (default = false)
   provideReactant?: {
     prompt: string; // Prompt to show user

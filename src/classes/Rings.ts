@@ -3,12 +3,14 @@ export class Ring {
   public members: number[] = [];
   public readonly ID: number;
   public readonly digit: number; // Digit which was associated with the ring at parse-time
-  public isAromatic: boolean;
+  public start: number; // ID of starting group
+  public end: number | undefined = undefined; // ID of ending group
+  public isAromatic = false;
 
-  constructor(digit: number) {
+  constructor(digit: number, startID: number) {
     this.ID = ID++;
     this.digit = digit;
-    this.isAromatic = false;
+    this.start = startID;
   }
 }
 

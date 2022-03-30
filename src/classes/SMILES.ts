@@ -46,18 +46,11 @@ export class SMILES {
             });
           });
         });
-        // Check for open rings
-        for (let digit in ps.openRings) {
-          const ring = ps.openRings[digit];
-          if (ring !== undefined) {
-            const openingGroup = ps.groupMap[ring.members[0]];
-            throw new AdvError(`Ring Error: unclosed ring '${ring.digit}'`, smiles.substr(openingGroup.smilesStringPosition)).setColumnNumber(openingGroup.smilesStringPosition);
-          }
+        // Check for open rings && close them with bonds
+        for (const ring of ps.rings) {
+          if (ring.end === undefined) throw new AdvError(`Ring Error: unclosed ring '${ring.digit}'`, smiles.substring(ps.groupMap[ring.start].smilesStringPosition)).setColumnNumber(ps.groupMap[ring.start].smilesStringPosition);
+          ps.groupMap[ring.start].addBond(ring.isAromatic ? ':' : '-', ps.groupMap[ring.end]);
         }
-        // Create bonds between ring ends
-        ps.rings.forEach(ring => {
-          ps.groupMap[ring.members[0]].addBond(ring.isAromatic ? ':' : '-', ps.groupMap[arrFromBack(ring.members)]);
-        });
         // Add implicit hydrogens?
         if (parseOptions.addImplicitHydrogens) ps.molecules.forEach(m => m.addImplicitHydrogens());
         // Check bond count
@@ -70,6 +63,14 @@ export class SMILES {
             throw x.error;
           }
         });
+        // Find ring members
+        for (let mol of ps.molecules) {
+          for (let ring of mol.rings) {
+            const paths = mol.pathfind(ring.start, ring.end);
+            const llen = Math.max(...paths.map(path => path.length)); // Length of longest path
+            ring.members = mol.traceBondPath(ring.start, paths.find(path => path.length === llen));
+          }
+        }
       } catch (e) {
         if (e instanceof AdvError) {
           let col = e.columnNumber;
@@ -248,12 +249,13 @@ export class SMILES {
         // Do not add if ring is closed -> this was handled last time
         obj.digits.forEach(digit => {
           if (ps.openRings[digit] === undefined) {
-            const ring = new Ring(digit);
+            const ring = new Ring(digit, group.ID);
             ps.openRings[digit] = ring;
             ps.rings.push(ring);
             ps.molecules[ps.molecules.length - 1].rings.push(ring);
             ps.openRings[digit].members.push(group.ID);
           } else {
+            ps.openRings[digit].end = group.ID;
             delete ps.openRings[digit];
           }
         });
@@ -327,13 +329,13 @@ export class SMILES {
       }
       //#endregion
 
-      // #region Add to Any Open Rings
-      for (let digit in ps.openRings) {
-        if (ps.openRings.hasOwnProperty(digit)) {
-          ps.openRings[digit].members.push(groups[groups.length - 1].ID);
-        }
-      }
-      //#endregion
+      // // #region Add to Any Open Rings
+      // for (let digit in ps.openRings) {
+      //   if (ps.openRings.hasOwnProperty(digit)) {
+      //     ps.openRings[digit].members.push(groups[groups.length - 1].ID);
+      //   }
+      // }
+      // //#endregion
     }
 
     // Add groups to SMILES instance
@@ -402,25 +404,20 @@ export class ParsedSMILES {
     occtx.fillStyle = renderOptions.bg;
     occtx.fillRect(0, 0, oc.width, oc.height);
 
+    // Record positions of every image/text piece
     let P = 3, x = P, y = P, w = x, h = y, minH = h, minW = w;
-    const posHistory: { x: number, y: number, w: number, h: number, minW: number, minH: number }[] = [];
+    const molPosHistory: { x: number, y: number, minW: number, minH: number }[] = []; // Position of molecules
+    const txtPosHistory: { text: string, x: number, y: number, w: number, h: number }[] = [];
     const isReaction = this.reactionIndexes.some(n => n !== -1);
     for (let i = 0; i < images.length; ++i) {
       const image = images[i];
-
       // Width/height of final image
       if (image.height > h - minH) h = minH + image.height;
       if (image.width > w - minW) w = minW + image.width;
       if (w > minW) minW = w;
-      
-      occtx.putImageData(image, x, y + (h - minH) / 2 - image.height / 2);
-      // if (renderOptions.boxMolecules) {
-      //   occtx.strokeStyle = "#000000";
-      //   occtx.strokeRect(x, y, image.width, h - minH);
-      // }
+      // Add record
+      molPosHistory.push({ x, y: NaN, minW, minH });
       x += image.width;
-
-      posHistory.push({ x, y, w, h, minW, minH });
 
       if (isReaction && this.molecules[i + 1]) {
         const eq = !this.reactionIndexes.some(n => n === i); // Are molecules the same type?
@@ -429,13 +426,17 @@ export class ParsedSMILES {
         occtx.font = renderOptions.font.set("size", 25).toString();
         occtx.fillStyle = renderOptions.defaultAtomColor;
         let { width, height } = getTextMetrics(occtx, text);
-        occtx.fillText(text, x + P, y + (h - minH)/2);
+        txtPosHistory.push({ text, x: x + P, y: NaN, w: width, h: height });
         occtx.font = renderOptions.font.set("size", osize).toString();
         width += 2 * P;
         x += width;
         if (x > w) w = x;
 
         if (!eq) {
+          for (let j = txtPosHistory.length - 1; j >= 0 && isNaN(txtPosHistory[j].y); j--)
+            txtPosHistory[j].y = y + (h - minH) / 2;
+          for (let j = molPosHistory.length - 1; j >= 0 && isNaN(molPosHistory[j].y); j--)
+            molPosHistory[j].y = y + (h - minH) / 2 - images[j].height / 2;
           x = P;
           y = h + 2 * P;
           minH = y;
@@ -443,6 +444,24 @@ export class ParsedSMILES {
         }
       }
     }
+    for (let j = txtPosHistory.length - 1; j >= 0 && isNaN(txtPosHistory[j].y); j--)
+      txtPosHistory[j].y = y + (h - minH) / 2;
+    for (let j = molPosHistory.length - 1; j >= 0 && isNaN(molPosHistory[j].y); j--)
+      molPosHistory[j].y = y + (h - minH) / 2 - images[j].height / 2;
+
+    // Render molecule images
+    for (let i = 0; i < molPosHistory.length; i++) {
+      occtx.putImageData(images[i], molPosHistory[i].x, molPosHistory[i].y);
+    }
+
+    // Render text
+    const osize = renderOptions.font.size;
+    occtx.font = renderOptions.font.set("size", 25).toString();
+    occtx.fillStyle = renderOptions.defaultAtomColor;
+    for (const { text, x, y, h } of txtPosHistory) {
+      occtx.fillText(text, x, y + h/3);
+    }
+    occtx.font = renderOptions.font.set("size", osize).toString();
 
     // Reagent brackets
     if (renderOptions.reagentBracketWidth !== -1 && this.reactionIndexes.length !== 0) {
@@ -450,27 +469,27 @@ export class ParsedSMILES {
         if (this.reactionIndexes[j] !== this.reactionIndexes[j + 1]) {
           let i = this.reactionIndexes[j] + 1;
           // "["
-          let height = posHistory[i].h - posHistory[i].minH - 2 * P;
+          let height = images[i].height - molPosHistory[i].minH - 2 * P;
           occtx.strokeStyle = renderOptions.defaultAtomColor;
           occtx.beginPath();
-          occtx.moveTo(posHistory[i].x - images[i].width + renderOptions.reagentBracketWidth, posHistory[i].y + P);
-          occtx.lineTo(posHistory[i].x - images[i].width, posHistory[i].y + P);
-          occtx.lineTo(posHistory[i].x - images[i].width, posHistory[i].y + height - P);
-          occtx.lineTo(posHistory[i].x - images[i].width + renderOptions.reagentBracketWidth, posHistory[i].y + height - P);
+          occtx.moveTo(molPosHistory[i].x - images[i].width + renderOptions.reagentBracketWidth, molPosHistory[i].y + P);
+          occtx.lineTo(molPosHistory[i].x - images[i].width, molPosHistory[i].y + P);
+          occtx.lineTo(molPosHistory[i].x - images[i].width, molPosHistory[i].y + height - P);
+          occtx.lineTo(molPosHistory[i].x - images[i].width + renderOptions.reagentBracketWidth, molPosHistory[i].y + height - P);
           occtx.stroke();
-          posHistory[i].x += renderOptions.reagentBracketWidth;
+          molPosHistory[i].x += renderOptions.reagentBracketWidth;
 
           i = this.reactionIndexes[j + 1];
           // "]"
-          height = posHistory[i].h - posHistory[i].minH - 2 * P;
+          height = images[i].height - molPosHistory[i].minH - 2 * P;
           occtx.strokeStyle = renderOptions.defaultAtomColor;
           occtx.beginPath();
-          occtx.moveTo(posHistory[i].x - 2*P - renderOptions.reagentBracketWidth, posHistory[i].y + P);
-          occtx.lineTo(posHistory[i].x - 2*P, posHistory[i].y + P);
-          occtx.lineTo(posHistory[i].x - 2*P, posHistory[i].y + height - P);
-          occtx.lineTo(posHistory[i].x - 2*P - renderOptions.reagentBracketWidth, posHistory[i].y + height - P);
+          occtx.moveTo(molPosHistory[i].x - 2*P - renderOptions.reagentBracketWidth, molPosHistory[i].y + P);
+          occtx.lineTo(molPosHistory[i].x - 2*P, molPosHistory[i].y + P);
+          occtx.lineTo(molPosHistory[i].x - 2*P, molPosHistory[i].y + height - P);
+          occtx.lineTo(molPosHistory[i].x - 2*P - renderOptions.reagentBracketWidth, molPosHistory[i].y + height - P);
           occtx.stroke();
-          posHistory[i].x += renderOptions.reagentBracketWidth;
+          molPosHistory[i].x += renderOptions.reagentBracketWidth;
         }
       }
     }

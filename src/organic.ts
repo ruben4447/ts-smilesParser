@@ -1,5 +1,6 @@
 import { Group } from "./classes/Group";
 import type { Molecule } from "./classes/Molecule";
+import { BondType } from "./types/Bonds";
 import { IMoleculeType, IReactionInfo } from "./types/utils";
 
 export const moleculeTypes: { [id: number]: IMoleculeType } = {
@@ -7,13 +8,14 @@ export const moleculeTypes: { [id: number]: IMoleculeType } = {
     repr: "alkane",
     name: "Alkane",
     eg: { smiles: "CC", name: "ethane" },
-    test: mol => mol.matchMolecule({ atom: "C", rec: 1, bondedTo: [{ atom: "H", rec: 3 }, { atom: "C", bond: "-", rec: 2 }] }),
+    test: mol => mol.matchMolecule({ atom: "C", rec: 1, bondedTo: [{ atom: "H", rec: 2 }] }),
   },
   2: {
     repr: "alkene",
     name: "Alkene",
     eg: { smiles: "C=C", name: "ethene" },
     test: mol => mol.matchMolecule({ atom: "C", rec: 1, bondedTo: [{ atom: "H" }, { atom: "C", bond: "=", rec: 2 }] }),
+    removeIfPresent: [1],
   },
   3: {
     repr: "alcohol",
@@ -176,6 +178,12 @@ export const moleculeTypes: { [id: number]: IMoleculeType } = {
     test: mol => mol.matchMolecule({ atom: "C", rec: 1, bondedTo: [{ atom: "O", rec: 2, charge: -1 }] }),
     removeIfPresent: [17]
   },
+  27: {
+    repr:"organosulfate",
+    name: "Organosulfate",
+    eg: { smiles: "COS(=O)(=O)[O-]", name: "methylsulfate" },
+    test: mol => mol.matchMolecule({ atom: "C", rec: 1, bondedTo: [{ atom: "O", rec: 2, bondedTo: [{ atom: "S", rec: 3, bondedTo: [{ atom: "O", bond: "-", charge: -1, rec: 4 }, { atom: "O", bond: "=", rec: 5 }, { atom: "O", bond: "=", rec: 6 }] }] }] }),
+  }
 };
 
 export const reactions: IReactionInfo[] = [
@@ -281,22 +289,10 @@ export const reactions: IReactionInfo[] = [
         return { ok: false, data: `Expected halogen X, got ${reactant.generateSMILES()}` };
       }
 
-      let ok = false;
-      // Replace Hydrogen bonded to group[2]
-      for (const bond of group[2].bonds) {
-        if (mol.groups[bond.dest].isElement("H")) {
-          mol.groups[bond.dest].elements.clear(); // Remove H
-          mol.groups[bond.dest].addElement(Xstr); // Add halogen
-          mol.groups[bond.dest].isImplicit = false;
-          ok = true;
-          break;
-        }
-      }
-      if (!ok) return { ok: false, data: "Both carbons must be bonded to a Hydrogen" };
-      // Replace Hydroegen bonded to group[1] (which is group[3])
-      group[3].elements.clear();
-      group[3].addElement(Xstr);
-      group[3].isImplicit = false;
+      // Replace hydrogen
+      group[2].elements.clear();
+      group[2].addElement(Xstr);
+      group[2].isImplicit = false;
 
       return { ok: true };
     }
@@ -1207,5 +1203,34 @@ export const reactions: IReactionInfo[] = [
       return { ok: true };
     }
   },
+  {
+    start: 3,
+    end: 27,
+    reagents: "ClSO3H or SO3",
+    react: (mol, group, opts) => {
+      // Remove O-H
+      let bondIndex = group[2].bonds.findIndex(bond => bond.dest === group[3].ID);
+      group[2].bonds.splice(bondIndex, 1);
+      delete mol.groups[group[3].ID];
+
+      // Add sulphate group
+      let S = new Group();
+      S.addElement("S");
+      mol.groups[S.ID] = S;
+      group[2].addBond("-", S);
+
+      let Os: Group[] = [], bonds: BondType[] = ["=", "=", "-"];
+      bonds.forEach(bond => {
+        let O = new Group();
+        O.addElement("O");
+        mol.groups[O.ID] = O;
+        S.addBond(bond, O);
+        Os.push(O);
+      });
+      Os[Os.length - 1].charge = -1;
+
+      return { ok: true };
+    }
+  }
   // Start again at Reaction ID 28
 ];

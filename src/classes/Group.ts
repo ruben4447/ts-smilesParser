@@ -178,7 +178,7 @@ export class Group {
 
   /** String representation of whole atom */
   public toString() {
-    let string = '', brackets = !this.inOrganicSubset();
+    let string = '', brackets = !this.inOrganicSubset() || this.charge !== 0;
     if (this.atomicMass !== undefined) {
       string += this.atomicMass.toString();
       brackets = true;
@@ -275,7 +275,7 @@ export class Group {
     items.forEach(({ text, pos, colEquiv }) => {
       ctx.font = pos === 0 ? re.font.toString() : re.smallFont.toString();
       let { width, height } = getTextMetrics(ctx, text);
-      ctx.fillStyle = colEquiv === undefined ? (re.atomColors[text] ?? re.defaultAtomColor) : re.atomColors[colEquiv];
+      ctx.fillStyle = re.atomColors[colEquiv ?? text] ?? re.defaultAtomColor;
       ctx.fillText(text, x, y - (pos * height * 0.4));
       x += width;
     });
