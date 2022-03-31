@@ -13,19 +13,17 @@ globalThis.$globals = $globals;
 
 var canvas: HTMLCanvasElement, env: SMILES;
 var inputSMILES: HTMLInputElement, elOutput: HTMLElement, selectBoolOption: HTMLSelectElement, inputBoolOption: HTMLInputElement;
-var parseTime = 0;
 var prepAnalyseMolecule: (mol: Molecule) => void;
 
 function _main() {
   env = new SMILES();
   $globals.env = env;
   env.parseOptions.addImplicitHydrogens = true;
-  env.parseOptions.checkBondCount = !true;
-  // env.renderOptions.renderImplicit = false;
+  env.parseOptions.checkBondCount = false;
   env.renderOptions.collapseH = true;
-  env.renderOptions.bondLength = 40;
+  env.renderOptions.bondLength = 2*30;
+  env.renderOptions.debugShowAngles = false;
   env.renderOptions.debugShowGroupIDs = true;
-  env.renderOptions.debugShowRingIDs = true;
 
   const tabContainer = document.createElement('div');
   const tabMap = Tabs.createMap();
@@ -37,18 +35,11 @@ function _main() {
   tabs.open("smiles");
   document.body.appendChild(tabContainer);
 
-  // TODO
-  // - If aromatic, all bonds must be aromatic
-  // - Rings: lowercase ring atoms mean aromatic ring
-  // - Ring: support ring members bridging molecules (this.getAllBonds -> search all molecules now)
-  // - SMILES generation: show aromatic bonds
-
   // parseSmiles("CS(=O)(=O)O.F>>C(F)(F)(F)S(=O)(=O)O.[H2]");
   // parseSmiles("C=C>[H2].[Ni]>CC");
   // parseSmiles("C.ClCl>>CCl.ClCCl.C(Cl)(Cl)Cl.ClC(Cl)(Cl)Cl.[H]Cl");
-  // parseSmiles("CC1=C(C=C(C=C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
-  // parseSmiles("C1CCCCO1");
-  parseSmiles("C1:C:C:C:C:C1");
+  // parseSmiles("C1=CC=C(C(=C1)CC(=O)O)NC2=C(C=CC=C2Cl)Cl");
+  parseSmiles("C1:C:C:C:C:C1OC2:C:C:C:C:C2");
   // parseSmiles("CC1:C(:C:C(:C:C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
 }
 
@@ -74,6 +65,7 @@ function generateSMILESContent() {
   }
   opts['renderImplicit'] = { get: () => $globals.env.renderOptions.renderImplicit, set: (v: boolean) => ($globals.env.renderOptions.renderImplicit = v) };
   opts['collapseHydrogens'] = { get: () => $globals.env.renderOptions.collapseH, set: (v: boolean) => ($globals.env.renderOptions.collapseH = v) };
+  opts['ringBondAngleSmall'] = { get: () => $globals.env.renderOptions.ringRestrictAngleSmall, set: (v: boolean) => ($globals.env.renderOptions.ringRestrictAngleSmall = v) };
   for (let key in opts) selectBoolOption.insertAdjacentHTML("beforeend", `<option value='${key}'>${key}</option>`);
 
   p.insertAdjacentHTML("beforeend", " <span>=</span> ");
@@ -315,7 +307,7 @@ function parseSmiles(smiles: string) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   inputSMILES.value = smiles;
 
-  let ps: ParsedSMILES;
+  let ps: ParsedSMILES, parseTime: number;
   try {
     parseTime = performance.now();
     ps = env.parse(smiles);
@@ -329,15 +321,17 @@ function parseSmiles(smiles: string) {
   }
   $globals.parsedSMILES = ps;
 
+  let renderTime = performance.now();
   const image = ps.render();
+  renderTime = performance.now() - renderTime;
 
   // Get distance from (0,0) such that the molecule is centred
   let θ = Math.atan2(canvas.width - image.width, canvas.height - image.height);
   let h = 0.5 * Math.hypot(canvas.height - image.height, canvas.width - image.width);
-  ctx.putImageData(image, h * Math.sin(θ), 0 /*h * Math.cos(θ)*/);
+  ctx.putImageData(image, h * Math.sin(θ), 0);
 
   // SMILES
-  elOutput.innerHTML += `<b>SMILES</b>: ${ps.generateSMILES()} | Took <em>${utils.numstr(parseTime)}</em> ms | Created ${utils.numstr(ps.molecules.length)} molecule${ps.molecules.length === 1 ? '' : 's'}`;
+  elOutput.innerHTML += `<b>SMILES</b>: ${ps.generateSMILES()} | <em>${utils.numstr(parseTime)}/${utils.numstr(renderTime)}</em> ms p/r | Created ${utils.numstr(ps.molecules.length)} molecule${ps.molecules.length === 1 ? '' : 's'}`;
 
   const mdiv = document.createElement("div");
   elOutput.appendChild(mdiv);

@@ -94,8 +94,10 @@ export interface IRenderOptions {
   moleculePadding: number;
   reagentBracketWidth: number; // Width of brackets surrounding reagents. -1 to disable brackets.
 
+  debugFont: Font;
   debugShowGroupIDs?: boolean;
   debugShowRingIDs?: boolean;
+  debugShowAngles?: boolean;
 }
 
 export const createRenderOptsObject = (): IRenderOptions => ({
@@ -121,9 +123,10 @@ export const createRenderOptsObject = (): IRenderOptions => ({
   collapseH: true,
   bondGap: 5,
   aromaticRingDist: 0.71,
-  ringRestrictAngleSmall: true,
+  ringRestrictAngleSmall: false,
   font: new Font().set("family", "Arial").set("size", 15),
   smallFont: new Font().set("family", "Arial").set("size", 10),
+  debugFont: new Font().set("family", "monospace").set("size", 10),
   boxMolecules: true,
   moleculePadding: 10,
   reagentBracketWidth: 5,

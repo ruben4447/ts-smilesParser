@@ -66,7 +66,7 @@ export class SMILES {
         // Find ring members
         for (let mol of ps.molecules) {
           for (let ring of mol.rings) {
-            const paths = mol.pathfind(ring.start, ring.end);
+            const paths = mol.pathfind(ring.start, ring.end, ring.members);
             const llen = Math.max(...paths.map(path => path.length)); // Length of longest path
             ring.members = mol.traceBondPath(ring.start, paths.find(path => path.length === llen));
           }
@@ -329,13 +329,11 @@ export class SMILES {
       }
       //#endregion
 
-      // // #region Add to Any Open Rings
-      // for (let digit in ps.openRings) {
-      //   if (ps.openRings.hasOwnProperty(digit)) {
-      //     ps.openRings[digit].members.push(groups[groups.length - 1].ID);
-      //   }
-      // }
-      // //#endregion
+      // #region Add to Any Open Rings
+      for (let digit in ps.openRings) {
+        ps.openRings[digit].members.push(groups[groups.length - 1].ID);
+      }
+      //#endregion
     }
 
     // Add groups to SMILES instance
@@ -469,25 +467,23 @@ export class ParsedSMILES {
         if (this.reactionIndexes[j] !== this.reactionIndexes[j + 1]) {
           let i = this.reactionIndexes[j] + 1;
           // "["
-          let height = images[i].height - molPosHistory[i].minH - 2 * P;
           occtx.strokeStyle = renderOptions.defaultAtomColor;
           occtx.beginPath();
-          occtx.moveTo(molPosHistory[i].x - images[i].width + renderOptions.reagentBracketWidth, molPosHistory[i].y + P);
-          occtx.lineTo(molPosHistory[i].x - images[i].width, molPosHistory[i].y + P);
-          occtx.lineTo(molPosHistory[i].x - images[i].width, molPosHistory[i].y + height - P);
-          occtx.lineTo(molPosHistory[i].x - images[i].width + renderOptions.reagentBracketWidth, molPosHistory[i].y + height - P);
+          occtx.moveTo(molPosHistory[i].x + renderOptions.reagentBracketWidth, molPosHistory[i].y + P);
+          occtx.lineTo(molPosHistory[i].x, molPosHistory[i].y + P);
+          occtx.lineTo(molPosHistory[i].x, molPosHistory[i].y + images[i].height - P);
+          occtx.lineTo(molPosHistory[i].x + renderOptions.reagentBracketWidth, molPosHistory[i].y + images[i].height - P);
           occtx.stroke();
           molPosHistory[i].x += renderOptions.reagentBracketWidth;
 
           i = this.reactionIndexes[j + 1];
           // "]"
-          height = images[i].height - molPosHistory[i].minH - 2 * P;
           occtx.strokeStyle = renderOptions.defaultAtomColor;
           occtx.beginPath();
-          occtx.moveTo(molPosHistory[i].x - 2*P - renderOptions.reagentBracketWidth, molPosHistory[i].y + P);
-          occtx.lineTo(molPosHistory[i].x - 2*P, molPosHistory[i].y + P);
-          occtx.lineTo(molPosHistory[i].x - 2*P, molPosHistory[i].y + height - P);
-          occtx.lineTo(molPosHistory[i].x - 2*P - renderOptions.reagentBracketWidth, molPosHistory[i].y + height - P);
+          occtx.moveTo(molPosHistory[i].x + images[i].width - 2*P - renderOptions.reagentBracketWidth, molPosHistory[i].y + P);
+          occtx.lineTo(molPosHistory[i].x + images[i].width - 2*P, molPosHistory[i].y + P);
+          occtx.lineTo(molPosHistory[i].x + images[i].width - 2*P, molPosHistory[i].y + images[i].height - P);
+          occtx.lineTo(molPosHistory[i].x + images[i].width - 2*P - renderOptions.reagentBracketWidth, molPosHistory[i].y + images[i].height - P);
           occtx.stroke();
           molPosHistory[i].x += renderOptions.reagentBracketWidth;
         }
