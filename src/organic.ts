@@ -251,7 +251,7 @@ export const reactions: IReactionInfo[] = [
       let Xstr: string;
       if (Object.values(reactant.groups).length === 1) {
         let X = Object.values(reactant.groups)[0];
-        if (X.isElement("F", "Cl", "Br", "I") && X.charge === 0) Xstr = X.getElementString(false);
+        if (X.isElement("F", "Cl", "Br", "I") && X.charge === 0) Xstr = X.getElementString(false, false);
         else return { ok: false, data: `Expected halogen X, got ${X.toStringFancy(false)}` };
       } else {
         return { ok: false, data: `Expected halogen X, got ${reactant.generateSMILES()}` };
@@ -283,7 +283,7 @@ export const reactions: IReactionInfo[] = [
       let Xstr: string;
       if (Object.values(reactant.groups).length === 1) {
         let X = Object.values(reactant.groups)[0];
-        if (X.isElement("F", "Cl", "Br", "I") && X.charge === 0) Xstr = X.getElementString(false);
+        if (X.isElement("F", "Cl", "Br", "I") && X.charge === 0) Xstr = X.getElementString(false, false);
         else return { ok: false, data: `Expected halogen X, got ${X.toStringFancy(false)}` };
       } else {
         return { ok: false, data: `Expected halogen X, got ${reactant.generateSMILES()}` };
@@ -462,7 +462,7 @@ export const reactions: IReactionInfo[] = [
       delete mol.groups[group[3].ID];
       // Replace C-O with C-X
       group[2].elements.clear();
-      group[2].addElement(X.getElementString(false));
+      group[2].addElement(X.getElementString(false, false));
 
       return { ok: true };
     }
@@ -1132,7 +1132,7 @@ export const reactions: IReactionInfo[] = [
 
       // Add halogen
       group[2].elements.clear();
-      group[2].addElement(X.getElementString(false));
+      group[2].addElement(X.getElementString(false, false));
 
       mol.removeUnbondedGroups(C.ID);
       return { ok: true };

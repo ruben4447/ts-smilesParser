@@ -43,7 +43,7 @@ A branch's parent atom is the left-most atom in the SMILES string e.g. `C(CO)`. 
 ## Cyclic Structures
 Opened by a number which indicates which ring it is. When a closing digit is reached, these two atoms bond in a ring. e.g. `C1CCC1`
 
-SYNTAX: `<atom><digit>[<SMILED>]<atom><digit>`
+SYNTAX: `<atom><digit>[<SMILES>]<atom><digit>`
 
 Any one atom may have multiple ring digits e.g. `C12` is opening/closing rings 1 and 2. Due to this, only 10 (0-9) rings may be open at once (a unmber may be reused once the ring is closed e.g. `C1CCCC1C1CC1`).
 

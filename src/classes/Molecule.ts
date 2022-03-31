@@ -194,7 +194,7 @@ export class Molecule {
             atoms[i].count += count;
           });
         } else {
-          let str = group.getElementString(true), chargeStr = str + '{' + groupCharge + '}', i = elementsPos.indexOf(chargeStr);
+          let str = group.getElementString(false, true), chargeStr = str + '{' + groupCharge + '}', i = elementsPos.indexOf(chargeStr);
           if (atoms[i] === undefined) {
             atoms.push({ atom: str, charge: groupCharge, count: 0 });
             elementsPos.push(chargeStr);
@@ -397,10 +397,8 @@ export class Molecule {
         // Handled; remove from array
         if (stack[i].parent !== undefined) {
           let j = stack[i].parent;
-          // stack[j].smiles += "(" + stack[i].smiles + ")";
           stack[j].smilesChildren.push(assembleSMILES(stack[i]));
         } else {
-          // smiles = stack[i].smiles + smiles;
           smiles = assembleSMILES(stack[i]) + smiles;
         }
         stack.splice(i, 1);
@@ -412,7 +410,8 @@ export class Molecule {
           // Shall we render this?
           const render = !group.isImplicit || (group.isImplicit && showImplicits);
           if (render) {
-            stack[i].smiles += stack[i].bond && stack[i].bond !== '-' ? stack[i].bond : '';
+            let bond = stack[i].bond && stack[i].bond !== '-' ? (stack[i].bond === ":" && this.groups[stack[i].group].isLowercase ? "" : stack[i].bond) : ''; // Get bond between molecules. If aromatic bond and lowercase, ignore
+            stack[i].smiles += bond;
             stack[i].smiles += group.toString();
             if (group.ringDigits.length !== 0) stack[i].smiles += group.ringDigits.map(n => '%' + n).join('');
           }
@@ -490,7 +489,7 @@ export class Molecule {
     const processStack: number[] = []; // Stack of group IDs to process
     const doneGroups = new Set<number>();
     const inRings = new Set<number>(); // Set of all groups which have been sorted into a ring structure
-    const rings: { [rdigit: number]: { minX: number, maxX: number, minY: number, maxY: number} } = {};
+    const rings = new Map<number, { minX: number, maxX: number, minY: number, maxY: number }>();
     const angles = new Map<number, [number, number]>(); // Group IDs to angle [start, end]
     let iters = 0;
     
@@ -518,8 +517,7 @@ export class Molecule {
 
         const ring = this.rings.find(ring => ring.members.some(mid => mid === gid));
         if (ring) {
-          if (rings[ring.digit] === undefined) {
-            console.log(`ATOM #${gid} in ring ${ring.ID}`);
+          if (!rings.has(ring.ID)) {
             const interior = 2*Math.PI / ring.members.length; // Interior angle
             const rot = Math.PI/2 - interior/2;
             const ext = Math.PI - 2*rot;
@@ -540,13 +538,13 @@ export class Molecule {
               angles.set(ring.members[k], re.ringRestrictAngleSmall ? [angle + Math.PI, angle + ext] : [angle, angle + 2*(Math.PI - ext)]);
               angle -= ext;
             }
-            rings[ring.digit] = { minX, maxX, minY, maxY };
+            rings.set(ring.ID, { minX, maxX, minY, maxY });
           }
         }
 
         let [ θu, θv ] = angles.get(gid); // Start/end angle
         let df = (iters === 0 ? bonds.length : bonds.length - 1);
-        // bonds.filter(bond => !inRings.has(bond.dest)).length; //
+        // bonds.filter(bond => !inRings.has(bond.dest)).length;
         let θi = (θv - θu) / df; // angle increment
         // console.log({ θu, θv, df, θi });
         for (let i = 0, θ = θu; i < bonds.length; i++) {
@@ -598,12 +596,12 @@ export class Molecule {
       if (rec.y - rec.h / 2 < minY) minY = rec.y - rec.h / 2;
       if (rec.y + rec.h / 2 > maxY) maxY = rec.y + rec.h / 2;
     }
-    for (let id in rings) {
-      if (rings[id].minX < minX) minX = rings[id].minX;
-      if (rings[id].maxX > maxX) maxX = rings[id].maxX;
-      if (rings[id].minY < minY) minY = rings[id].minY;
-      if (rings[id].maxY > maxY) maxY = rings[id].maxY;
-    }
+    rings.forEach((obj, id) => {
+      if (obj.minX < minX) minX = obj.minX;
+      if (obj.maxX > maxX) maxX = obj.maxX;
+      if (obj.minY < minY) minY = obj.minY;
+      if (obj.maxY > maxY) maxY = obj.maxY;
+    });
     minX -= re.moleculePadding;
     maxX += re.moleculePadding;
     minY -= re.moleculePadding;
@@ -615,12 +613,12 @@ export class Molecule {
       rec.x += dx;
       rec.y += dy;
     }
-    for (const digit in rings) {
-      rings[digit].minX += dx;
-      rings[digit].maxX += dx;
-      rings[digit].minY += dy;
-      rings[digit].maxY += dy;
-    }
+    rings.forEach(obj => {
+      obj.minX += dx;
+      obj.maxX += dx;
+      obj.minY += dy;
+      obj.maxY += dy;
+    });
 
     // Fill background
     ctx.fillStyle = re.bg;
@@ -674,25 +672,25 @@ export class Molecule {
     }
 
     // Loop through rings
-    for (let digit in rings) {
-      const { minX, maxX, minY, maxY } = rings[digit], ring = this.rings.find(ring => ring.digit === +digit);
+    rings.forEach(({ minX, maxX, minY, maxY }, id) => {
+      const ring = this.rings.find(r => r.ID === id);
       const rx = (maxX - minX) / 2, ry = (maxY - minY) / 2;
       // Aromatic?
       if (ring.isAromatic) {
         ctx.beginPath();
         ctx.lineWidth = re.bondWidth;
         ctx.strokeStyle = re.defaultAtomColor;
-        const r = Math.min(rx*re.aromaticRingDist, ry*re.aromaticRingDist);
-        ctx.arc(minX + rx, minY + ry, r, 0, 2*Math.PI);
+        const r = Math.min(rx * re.aromaticRingDist, ry * re.aromaticRingDist);
+        ctx.arc(minX + rx, minY + ry, r, 0, 2 * Math.PI);
         ctx.stroke();
       }
       // Debug: show ID?
       if (re.debugShowRingIDs) {
         ctx.font = re.debugFont.toString();
         ctx.fillStyle = "mediumblue";
-        ctx.fillText(ring.ID.toString(), minX + rx, minY + ry);
+        ctx.fillText(id.toString(), minX + rx, minY + ry);
       }
-    }
+    });
 
     for (const id in positions) {
       let rec = positions[id], group = this.groups[id], P = 4, extraHs = 0;

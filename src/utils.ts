@@ -1,4 +1,4 @@
-import { symbolsByLength } from "./data-vars";
+import { lowercaseRingAtoms, symbolsByLength } from "./data-vars";
 import { BondType } from "./types/Bonds";
 import { IAtomCount } from "./types/SMILES";
 import { IExtractBetweenInformation, IParseDigitString, IParseInorganicString } from "./types/utils";
@@ -113,7 +113,11 @@ export function extractBetweenMatching(string: string, open: string, close: stri
 }
 
 /** Extract atom from string */
-export function extractElement(string: string): string | null {
+export function extractElement(string: string, searchLowercaseAtoms = true): string | null {
+  if (searchLowercaseAtoms)
+    for (let el of lowercaseRingAtoms) {
+      if (el === string.substr(0, el.length)) return el;
+    }
   for (let i = symbolsByLength.length - 1; i >= 0; i--) {
     for (let j = 0; j < symbolsByLength[i].length; j++) {
       let symbol = symbolsByLength[i][j];

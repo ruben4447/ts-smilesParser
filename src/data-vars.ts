@@ -20,4 +20,8 @@ export const organicSubset = {
   Br: [1],
   I: [1],
   "*": [NaN],
+  As: [3, 5],
+  Se: [2, 4, 6],
 };
+
+export const lowercaseRingAtoms = ["c", "n", "o", "p", "s", "as", "se"];

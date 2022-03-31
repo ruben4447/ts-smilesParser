@@ -1,4 +1,4 @@
-import { masses, organicSubset, symbols } from "../data-vars";
+import { lowercaseRingAtoms, masses, organicSubset, symbols } from "../data-vars";
 import { BondType } from "../types/Bonds";
 import { createParseOptionsObject, createRenderOptsObject, IParseOptions, IRenderOptions, IRingMap } from "../types/SMILES";
 import { IRec } from "../types/utils";
@@ -46,10 +46,63 @@ export class SMILES {
             });
           });
         });
-        // Check for open rings && close them with bonds
+        // Rings
         for (const ring of ps.rings) {
+          // Check for open rings
           if (ring.end === undefined) throw new AdvError(`Ring Error: unclosed ring '${ring.digit}'`, smiles.substring(ps.groupMap[ring.start].smilesStringPosition)).setColumnNumber(ps.groupMap[ring.start].smilesStringPosition);
+          // Close ring with bonds
           ps.groupMap[ring.start].addBond(ring.isAromatic ? ':' : '-', ps.groupMap[ring.end]);
+        }
+        // Rings
+        for (let mol of ps.molecules) {
+          for (let ring of mol.rings) {
+            // Find ring members
+            const paths = mol.pathfind(ring.start, ring.end, ring.members);
+            const llen = Math.max(...paths.map(path => path.length)); // Length of longest path
+            ring.members = mol.traceBondPath(ring.start, paths.find(path => path.length === llen));
+
+            // All lowercase?
+            if (ps.groupMap[ring.members[0]].isLowercase) {
+              for (let i = 1; i < ring.members.length; ++i) {
+                if (!ps.groupMap[ring.members[i]].isLowercase) throw new AdvError(`Syntax Error: expected lowercase ring atom [${lowercaseRingAtoms.join(",")}] in aromatic ring`, ps.groupMap[ring.members[i]].toString()).setColumnNumber(ps.groupMap[ring.members[i]].smilesStringPosition);
+              }
+            } else {
+              for (let i = 1; i < ring.members.length; ++i) {
+                if (ps.groupMap[ring.members[i]].isLowercase) throw new AdvError(`Syntax Error: unexpected lowercase atom in ring`, ps.groupMap[ring.members[i]].toString()).setColumnNumber(ps.groupMap[ring.members[i]].smilesStringPosition);
+              }
+            }
+            // If aromatic, must be aromatic bond between each members
+            if (ring.isAromatic) {
+              if (ps.groupMap[ring.members[0]].isLowercase) {
+                // Change all to aromatic bonds ":"
+                for (let i = 0; i < ring.members.length - 1; i++) {
+                  let a = ps.groupMap[ring.members[i]], b = ps.groupMap[ring.members[i + 1]];
+                  let bi = a.bonds.findIndex(bond => bond.dest === b.ID);
+                  if (bi === -1) {
+                    bi = b.bonds.findIndex(bond => bond.dest === a.ID);
+                    b.bonds[bi].bond = ":";
+                  } else {
+                    a.bonds[bi].bond = ":";
+                  }
+                }
+              } else {
+                // Check all aromatic bonds ":"
+                for (let i = 0; i < ring.members.length - 1; i++) {
+                  let a = ps.groupMap[ring.members[i]], b = ps.groupMap[ring.members[i + 1]];
+                  let bd = mol.getAllBonds(a.ID).find(bond => bond.dest === b.ID);
+                  if (bd.bond !== ":") throw new AdvError(`Syntax Error: expected aromatic bond ":" in aromatic ring, got bond "${bd.bond}"`, b.toString()).setColumnNumber(b.smilesStringPosition);
+                }
+              }
+            }
+          }
+        }
+        // Invalid lowercase groups
+        for (const id in ps.groupMap) {
+          const group = ps.groupMap[id];
+          if (group.isLowercase && !ps.rings.some(ring => ring.members.some(mem => mem === group.ID))) {
+            const str = group.toString();
+            throw new AdvError(`Syntax Error: unexpected lowercase atom outside of ring structure. Did you mean "${str[0].toUpperCase() + str.substring(1)}" ?`, str).setColumnNumber(group.smilesStringPosition);
+          }
         }
         // Add implicit hydrogens?
         if (parseOptions.addImplicitHydrogens) ps.molecules.forEach(m => m.addImplicitHydrogens());
@@ -63,14 +116,6 @@ export class SMILES {
             throw x.error;
           }
         });
-        // Find ring members
-        for (let mol of ps.molecules) {
-          for (let ring of mol.rings) {
-            const paths = mol.pathfind(ring.start, ring.end, ring.members);
-            const llen = Math.max(...paths.map(path => path.length)); // Length of longest path
-            ring.members = mol.traceBondPath(ring.start, paths.find(path => path.length === llen));
-          }
-        }
       } catch (e) {
         if (e instanceof AdvError) {
           let col = e.columnNumber;
@@ -141,7 +186,10 @@ export class SMILES {
         if (pos >= smiles.length) throw new AdvError(`Syntax Error: invalid bond '${currentBond}': unexpected end-of-input after bond`, currentBond).setColumnNumber(pos - 1);
         if (currentBond === ':') {
           if (Object.keys(ps.openRings).length === 0) throw new AdvError(`Bond Error: aromatic bond '${currentBond}' only valid in rings`, currentBond).setColumnNumber(pos - 1);
-          for (const rid in ps.openRings) ps.openRings[rid].isAromatic = true;
+          for (const rid in ps.openRings) {
+            if (ps.openRings[rid].isAromatic === false) throw new AdvError(`Bond Error: aromatic bond '${currentBond}' only valid in aromatic rings`, currentBond).setColumnNumber(pos - 1);
+            ps.openRings[rid].isAromatic = true;
+          }
         }
       }
       //#endregion
@@ -254,6 +302,8 @@ export class SMILES {
             ps.rings.push(ring);
             ps.molecules[ps.molecules.length - 1].rings.push(ring);
             ps.openRings[digit].members.push(group.ID);
+            // Lowercase means aromatic ring
+            if (group.isLowercase) ring.isAromatic = true;
           } else {
             ps.openRings[digit].end = group.ID;
             delete ps.openRings[digit];
@@ -271,13 +321,17 @@ export class SMILES {
         if (smiles[pos] === undefined) {
           throw new AdvError(`Syntax Error: unexpected end of input (expected organic atom, got EOL) at position ${pos}`, '').setColumnNumber(pos);
         } else {
-          let extracted = extractElement(smiles.substr(pos));
+          let extracted = extractElement(smiles.substring(pos));
           if (extracted) {
-            if (organicSubset[extracted] === undefined) {
-              throw new AdvError(`Syntax Error: expected organic element[${Object.keys(organicSubset).join(',')}], got '${extracted}'`, extracted).setColumnNumber(pos);
+            if (organicSubset[extracted] === undefined && lowercaseRingAtoms.indexOf(extracted) === -1) {
+              throw new AdvError(`Syntax Error: expected organic element [${Object.keys(organicSubset).join(',')}] or ring element [${lowercaseRingAtoms.join(',')}], got '${extracted}'`, extracted).setColumnNumber(pos);
             } else {
               // Add element to group information
               if (currentGroup === undefined) currentGroup = new Group({ chainDepth }).setSMILESposInfo(indexOffset + pos, extracted.length);
+              if (lowercaseRingAtoms.indexOf(extracted) !== -1) { // Lowercase atom ring
+                currentGroup.isLowercase = true;
+                extracted = extracted[0].toUpperCase() + extracted.substring(1);
+              }
               currentGroup.addElement(extracted);
               if (ps.parseOptions.showImplcitAtomicMass) currentGroup.atomicMass = masses[symbols.indexOf(Array.from(currentGroup.elements.keys())[0])];
               groups.push(currentGroup);
@@ -331,6 +385,7 @@ export class SMILES {
 
       // #region Add to Any Open Rings
       for (let digit in ps.openRings) {
+        if (ps.openRings[digit].isAromatic === undefined) ps.openRings[digit].isAromatic = false;
         ps.openRings[digit].members.push(groups[groups.length - 1].ID);
       }
       //#endregion

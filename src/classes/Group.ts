@@ -11,6 +11,7 @@ var ID = 0; // Next ID
 export class Group {
   public readonly ID = ID++;
   public elements: Map<string, number>;
+  public isLowercase = false; // Was digit defined as lower-case? (only applies to FIRST element)
   public atomicMass: number | undefined; // Atomic mass of FIRST element in this.elements
   public charge: number;
   public bonds: IBond[];
@@ -64,9 +65,9 @@ export class Group {
     this.elements.set(element, (this.elements.get(element) ?? 0) + count);
   }
 
-  /** Get element string { "A" => 1, "B" => 2 } goes to "AB2" */
-  public getElementString(html = false) {
-    return Array.from(this.elements).map(([element, count]) => count === 1 ? element : element + (html ? `<sub>${numstr(count)}</sub>` : count.toString())).join("");
+  /** Get element string { "A" => 1, "B" => 2 } goes to "AB2". doLowercase => if true and this.isLowercase, return first element as lowercase */
+  public getElementString(doLowercase: boolean, html = false) {
+    return Array.from(this.elements).map(([element, count], i) => (i === 0 && doLowercase && this.isLowercase ? (element = element.toLowerCase()) : 1) && count === 1 ? element : element + (html ? `<sub>${numstr(count)}</sub>` : count.toString())).join("");
   }
 
   /** Is this group a single element? */
@@ -106,7 +107,7 @@ export class Group {
   /** Count atoms in group */
   public countAtoms(ignoreCharge = false): IAtomCount[] {
     if (this.charge !== 0 && !ignoreCharge) {
-      let str = this.getElementString(), chargeStr = str + '{' + this.charge + '}';
+      let str = this.getElementString(false), chargeStr = str + '{' + this.charge + '}';
       return [{ atom: str, charge: this.charge, count: 1 }];
     } else {
       let atoms: IAtomCount[] = [], elementsPos: string[] = [];
@@ -183,7 +184,7 @@ export class Group {
       string += this.atomicMass.toString();
       brackets = true;
     }
-    string += this.getElementString();
+    string += this.getElementString(true);
     if (this.charge !== 0) string += chargeToString(this.charge);
     if (brackets) string = "[" + string + "]";
     return string;
@@ -191,7 +192,7 @@ export class Group {
 
   /** To fancy string e.g. "[NH4+]" -> (NH<sub>4</sub>)<sup>+</sup> */
   public toStringFancy(html = false): string {
-    let string = this.getElementString(true);
+    let string = this.getElementString(true, true);
     if (this.elements.size > 1) string = "(" + string + ")";
     if (this.charge !== 0) {
       const charge = chargeToString(this.charge);

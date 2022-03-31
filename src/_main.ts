@@ -22,8 +22,6 @@ function _main() {
   env.parseOptions.checkBondCount = false;
   env.renderOptions.collapseH = true;
   env.renderOptions.bondLength = 2*30;
-  env.renderOptions.debugShowAngles = false;
-  env.renderOptions.debugShowGroupIDs = true;
 
   const tabContainer = document.createElement('div');
   const tabMap = Tabs.createMap();
@@ -39,7 +37,7 @@ function _main() {
   // parseSmiles("C=C>[H2].[Ni]>CC");
   // parseSmiles("C.ClCl>>CCl.ClCCl.C(Cl)(Cl)Cl.ClC(Cl)(Cl)Cl.[H]Cl");
   // parseSmiles("C1=CC=C(C(=C1)CC(=O)O)NC2=C(C=CC=C2Cl)Cl");
-  parseSmiles("C1:C:C:C:C:C1OC2:C:C:C:C:C2");
+  parseSmiles("c1cccc1");
   // parseSmiles("CC1:C(:C:C(:C:C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
 }
 
