@@ -12,12 +12,17 @@ Organic subset atoms: `[B, C, N, O, P, S, F, Cl, Br, I, *]`
 
 Inorganic atoms in `[...]` with charges e.g. `[Au]`, `[O-]`, `[NH4+]`
 
-## Charge Declarations
+### Charge Declarations
 Syntax: `<item>{<charge>}`
 
 e.g. `O{-}`, `N{-2}`, `N{--}`
 
 May be stacked (e.g. `N{-}{-}`) or stacked with inorganic atoms (e.g. `[N-]{-}`). In this case, charges will be cumulative
+
+### Radicals
+Syntax: `[<atom>.]`
+
+Radicals may not have any formal charge
 
 ## Bonds
 Supports explicit bonds with the given bond value:
@@ -40,6 +45,9 @@ Syntax: `<atom>[[%<digits>]|<digit>]`
 Opened by a number which indicates which ring it is. When a closing digit is reached, these two atoms bond in a ring. e.g. `C1CCC1`
 
 Any one atom may support multiple ring digits. Ring digits range `0-9`, but multiple digits may be used by prefixing the rigit with `%`
+
+### Aromaticity
+Rings defined with lowercase atoms are aromatic, as are rings bonded using `:`
 
 ## Seperated Structures
 Structures may be seperated by `.`. Bonds may not be greated across structures.

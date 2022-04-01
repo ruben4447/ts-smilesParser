@@ -108,7 +108,7 @@ export class Molecule {
   public addImplicitHydrogens() {
     for (const gid in this.groups) {
       const group = this.groups[gid];
-      if (group.inOrganicSubset()) {
+      if (!group.isRadical && group.inOrganicSubset()) {
         const bonds = this.getBondCount(group.ID);
         if (group.charge === 0) {
           // Find target bonds
@@ -142,7 +142,7 @@ export class Molecule {
   public checkBondCounts(): true | { group: Group, element: string, error: AdvError } {
     for (const gid in this.groups) {
       const group = this.groups[gid], bonds = this.getBondCount(group.ID);
-      if (group.charge === 0 && group.inOrganicSubset()) {
+      if (group.charge === 0 && !group.isRadical && group.inOrganicSubset()) {
         let el = Array.from(group.elements.keys())[0] as string;
         if (!isNaN(organicSubset[el][0]) && !organicSubset[el].some((n: number) => n === bonds)) {
           const error = new AdvError(`Bond Error: invalid bond count for organic atom '${el}': ${bonds}. Expected ${organicSubset[el].join(' or ')}.`, el).setColumnNumber(group.smilesStringPosition);
@@ -327,12 +327,12 @@ export class Molecule {
         stack.splice(i, 1);
       } else {
         let groupElements = new Map<string, number>();
-        groupElements.set(group.toStringFancy(), 1);
+        groupElements.set(group.toStringFancy(html), 1);
         const bonds = this.getAllBonds(group.ID);
         for (let j = bonds.length - 1; j >= 0; j--) {
           const bond = bonds[j];
           if (!doneGroups.has(bond.dest) && this.groups[bond.dest].bonds.length === 0) {
-            let el = this.groups[bond.dest].toStringFancy();
+            let el = this.groups[bond.dest].toStringFancy(html);
             groupElements.set(el, (groupElements.get(el) ?? 0) + 1);
             doneGroups.add(bond.dest);
           }
@@ -692,6 +692,7 @@ export class Molecule {
       }
     });
 
+    // Render groups
     for (const id in positions) {
       let rec = positions[id], group = this.groups[id], P = 4, extraHs = 0;
       if (re.renderImplicit && re.collapseH) extraHs = this.getAllBonds(group.ID).filter(bond => (this.groups[bond.dest].isImplicit ? re.renderImplicit : false) && this.groups[bond.dest].isElement("H")).length;
@@ -699,10 +700,21 @@ export class Molecule {
       ctx.fillRect(rec.x - rec.w / 2 - P, rec.y - rec.h / 2 - P, rec.w + 2 * P, rec.h + 2 * P);
       group.renderAsText(ctx, { x: rec.x - rec.w / 2, y: rec.y + rec.h * 0.25 }, re, extraHs);
 
+      if (group.isRadical) {
+        ctx.beginPath();
+        ctx.fillStyle = group.getRenderColor();
+        ctx.arc(rec.x, rec.y - rec.h / 2 + re.radicalRadius, re.radicalRadius, 0, 2*Math.PI);
+        ctx.fill();
+      }
+
       if (re.debugShowGroupIDs) {
         ctx.fillStyle = "mediumblue";
         ctx.font = re.debugFont.toString();
         ctx.fillText(group.ID.toString(), rec.x + rec.w / 2, rec.y);
+      }
+      if (re.debugGroupBoundingBoxes) {
+        ctx.strokeStyle = "#FF00FF";
+        ctx.strokeRect(rec.x - rec.w / 2, rec.y - rec.h / 2, rec.w, rec.h);
       }
     }
 

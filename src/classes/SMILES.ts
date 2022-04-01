@@ -200,15 +200,15 @@ export class SMILES {
         let extraction = extractBetweenMatching(smiles, "{", "}", pos);
         // Was the extraction OK?
         if (extraction.openCount !== 0) throw new AdvError(`Syntax Error: unmatched closing brace at position ${pos} '${smiles[pos]}'`, smiles.substr(pos)).setColumnNumber(pos);
+        let group = arrFromBack(groups, 1), length = extraction.extracted.length + 2;
+        // Invalid: cumulative charge, radical
+        if ((group.charge !== 0 && !ps.parseOptions.cumulativeCharge) || group.isRadical) throw new AdvError(`Syntax Error: unexpected charge clause`, "{" + extraction.extracted + "}").setColumnNumber(pos);
 
         // Valid charge?
         let charge = parseChargeString(extraction.extracted);
         if (isNaN(charge)) throw new AdvError(`Syntax Error: invalid charge string. Expected ${_chargeRegex1} or ${_chargeRegex2}`, extraction.extracted).setColumnNumber(pos + 1);
 
         // Apply to last group Is charge already applied?
-        let group = arrFromBack(groups, 1), length = extraction.extracted.length + 2;
-        // Cumulative charge?
-        if (group.charge !== 0 && !ps.parseOptions.cumulativeCharge) throw new AdvError(`Syntax Error: unexpected charge clause`, "{" + extraction.extracted + "}").setColumnNumber(pos);
         group.charge += charge;
         pos += length;
         group.smilesStringLength += length;
@@ -224,7 +224,7 @@ export class SMILES {
         if (extraction.openCount !== 0) throw new AdvError(`Syntax Error: unmatched closing bracket at position ${pos} '${smiles[pos]}'`, smiles.substr(pos)).setColumnNumber(pos);
 
         // Parse inorganic string (function in 'utils')
-        let info = parseInorganicString(extraction.extracted);
+        let info = parseInorganicString(extraction.extracted, ps.parseOptions.enableRadicals);
         try {
           if (info.error === undefined) {
             // Are there any elements?
@@ -234,6 +234,7 @@ export class SMILES {
               if (currentGroup === undefined) currentGroup = new Group({ chainDepth }).setSMILESposInfo(indexOffset + pos, extraction.extracted.length + 2);
               info.elements.forEach((value, key) => currentGroup.addElement(key, value));
               currentGroup.charge = info.charge;
+              currentGroup.isRadical = info.isRadical === true;
               if (info.atomicMass !== undefined) currentGroup.atomicMass = info.atomicMass;
               else if (ps.parseOptions.showImplcitAtomicMass) currentGroup.atomicMass = masses[symbols.indexOf(Array.from(currentGroup.elements.keys())[0])];
 
@@ -490,10 +491,15 @@ export class ParsedSMILES {
             txtPosHistory[j].y = y + (h - minH) / 2;
           for (let j = molPosHistory.length - 1; j >= 0 && isNaN(molPosHistory[j].y); j--)
             molPosHistory[j].y = y + (h - minH) / 2 - images[j].height / 2;
-          x = P;
-          y = h + 2 * P;
-          minH = y;
-          minW = x;
+          if (renderOptions.reactionSplitLine) {
+            x = P;
+            y = h + 2 * P;
+            minH = y;
+            minW = x;
+          } else {
+            w += width;
+            minW = w;
+          }
         }
       }
     }

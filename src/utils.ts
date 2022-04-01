@@ -158,11 +158,11 @@ export const numstr = (n: number) => n.toLocaleString("en-GB");
  * Parse inorganic string e.g. 'NH4+' (stuff inside [...])
  * @throws AdvError
 */
-export function parseInorganicString(str: string): IParseInorganicString {
+export function parseInorganicString(str: string, allowRadicals = true): IParseInorganicString {
   let info: IParseInorganicString = { elements: new Map(), charge: 0, endIndex: 0 }, i = 0, lastAtom: string;
   // Atomic mass?
   if (_regexNum.test(str[i])) {
-    let num = extractInteger(str.substr(i)), numStr = num.toString();
+    let num = extractInteger(str.substring(i)), numStr = num.toString();
     if (!isNaN(num)) {
       info.atomicMass = num;
       i += numStr.length;
@@ -187,8 +187,13 @@ export function parseInorganicString(str: string): IParseInorganicString {
           i += numStr.length;
         }
       } else {
+        // Radical?
+        if (allowRadicals && i === str.length - 1 && info.charge === 0 && str[i] === ".") {
+          info.isRadical = true;
+          break;
+        }
         // Charge?
-        const chargeStr = str.substr(i), charge = parseChargeString(chargeStr);
+        const chargeStr = str.substring(i), charge = parseChargeString(chargeStr);
         if (isNaN(charge)) {
           info.error = `Syntax Error: invalid charge string '${chargeStr}'`;
           break;

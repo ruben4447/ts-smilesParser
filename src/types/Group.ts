@@ -7,6 +7,7 @@ export interface IGroupInformation {
   elements?: Map<string, number>;
   charge?: number;
   atomicMass?: number;
+  isRadical?: boolean;
   ringDigits?: number[];
   bonds?: IBond[];
   chainDepth?: number;

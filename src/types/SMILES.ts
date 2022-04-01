@@ -19,6 +19,7 @@ export interface IParseOptions {
   enableSeperatedStructures: boolean;
   enableReaction: boolean;
   enableMultipleReactions: boolean; // Allow chained reactions e.g. ... > ... > ... > ... > ...
+  enableRadicals: boolean;
   cumulativeCharge?: boolean; // Allow O{-}{-} ?
   checkBondCount?: boolean;
   addImplicitHydrogens?: boolean; // Add implicit Hydrogens e.g. "C" -> "C([H])([H])([H])([H])"
@@ -34,6 +35,7 @@ export const createParseOptionsObject = (): IParseOptions => ({
   enableSeperatedStructures: true,
   enableReaction: true,
   enableMultipleReactions: true,
+  enableRadicals: true,
   cumulativeCharge: true,
   checkBondCount: true,
   addImplicitHydrogens: true,
@@ -93,11 +95,14 @@ export interface IRenderOptions {
   boxMolecules: boolean; // Render molecules in boxes
   moleculePadding: number;
   reagentBracketWidth: number; // Width of brackets surrounding reagents. -1 to disable brackets.
+  reactionSplitLine: boolean; // Split reactions along multiple lines?
+  radicalRadius: number;
 
   debugFont: Font;
   debugShowGroupIDs?: boolean;
   debugShowRingIDs?: boolean;
   debugShowAngles?: boolean;
+  debugGroupBoundingBoxes?: boolean;
 }
 
 export const createRenderOptsObject = (): IRenderOptions => ({
@@ -130,6 +135,8 @@ export const createRenderOptsObject = (): IRenderOptions => ({
   boxMolecules: true,
   moleculePadding: 10,
   reagentBracketWidth: 5,
+  reactionSplitLine: true,
+  radicalRadius: 2,
 });
 
 export const defaultRenderOptsObject = createRenderOptsObject();

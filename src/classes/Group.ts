@@ -13,6 +13,7 @@ export class Group {
   public elements: Map<string, number>;
   public isLowercase = false; // Was digit defined as lower-case? (only applies to FIRST element)
   public atomicMass: number | undefined; // Atomic mass of FIRST element in this.elements
+  public isRadical: boolean;
   public charge: number;
   public bonds: IBond[];
   public ringDigits: number[] = []; // Are we defined with any ring digits?
@@ -20,7 +21,7 @@ export class Group {
   public smilesStringPosition: number = 0; // Position declared in SMILES string
   public smilesStringLength: number = 1; // Length of definition in SMILES string
   public readonly chainDepth: number;
-  public isImplicit: boolean = false; // Mainly for Hydrogens
+  public isImplicit = false; // Mainly for Hydrogens
 
   public constructor(data?: IGroupInformation) {
     if (data === undefined) data = {};
@@ -29,6 +30,7 @@ export class Group {
     this.ringDigits = data.ringDigits || [];
     this.bonds = data.bonds || [];
     this.chainDepth = data.chainDepth === undefined ? 0 : data.chainDepth;
+    this.isRadical = !!data.isRadical;
   }
 
   /** Is in organic subset */
@@ -179,13 +181,14 @@ export class Group {
 
   /** String representation of whole atom */
   public toString() {
-    let string = '', brackets = !this.inOrganicSubset() || this.charge !== 0;
+    let string = '', brackets = !this.inOrganicSubset() || this.charge !== 0 || this.isRadical;
     if (this.atomicMass !== undefined) {
       string += this.atomicMass.toString();
       brackets = true;
     }
     string += this.getElementString(true);
     if (this.charge !== 0) string += chargeToString(this.charge);
+    if (this.isRadical) string += ".";
     if (brackets) string = "[" + string + "]";
     return string;
   }
@@ -198,6 +201,7 @@ export class Group {
       const charge = chargeToString(this.charge);
       string += html ? "<sup>" + charge + "</sup>" : "{" + charge + "}";
     }
+    if (this.isRadical) string += html ? "•" : ".";
     return string;
   }
 
@@ -252,6 +256,7 @@ export class Group {
     }
     let { width, height } = getTextMetrics(ctx, str);
     width += re.textPadding * (elements.size - 1);
+    if (this.isRadical) height += re.radicalRadius * 4;
     return { width, height };
   }
 

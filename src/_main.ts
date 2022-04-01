@@ -19,9 +19,8 @@ function _main() {
   env = new SMILES();
   $globals.env = env;
   env.parseOptions.addImplicitHydrogens = true;
-  env.parseOptions.checkBondCount = false;
   env.renderOptions.collapseH = true;
-  env.renderOptions.bondLength = 2*30;
+  env.renderOptions.reactionSplitLine = false;
 
   const tabContainer = document.createElement('div');
   const tabMap = Tabs.createMap();
@@ -37,7 +36,7 @@ function _main() {
   // parseSmiles("C=C>[H2].[Ni]>CC");
   // parseSmiles("C.ClCl>>CCl.ClCCl.C(Cl)(Cl)Cl.ClC(Cl)(Cl)Cl.[H]Cl");
   // parseSmiles("C1=CC=C(C(=C1)CC(=O)O)NC2=C(C=CC=C2Cl)Cl");
-  parseSmiles("c1cccc1");
+  parseSmiles("ClCl>>[Cl.].[Cl.]");
   // parseSmiles("CC1:C(:C:C(:C:C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
 }
 
@@ -59,11 +58,12 @@ function generateSMILESContent() {
   // Allow user to configure stuff
   const opts = {};
   for (let key in createParseOptionsObject()) {
-    opts[key] = { get: () => $globals.env.parseOptions[key], set: (v: boolean) => ($globals.env.parseOptions[key] = v) };
+    opts[key] = { get: () => $globals.env.parseOptions[key], set: (v: boolean) => ($globals.env.parseOptions[key] = v), flag: 1 };
   }
-  opts['renderImplicit'] = { get: () => $globals.env.renderOptions.renderImplicit, set: (v: boolean) => ($globals.env.renderOptions.renderImplicit = v) };
-  opts['collapseHydrogens'] = { get: () => $globals.env.renderOptions.collapseH, set: (v: boolean) => ($globals.env.renderOptions.collapseH = v) };
-  opts['ringBondAngleSmall'] = { get: () => $globals.env.renderOptions.ringRestrictAngleSmall, set: (v: boolean) => ($globals.env.renderOptions.ringRestrictAngleSmall = v) };
+  opts['reactionSplitLine'] = { get: () => $globals.env.renderOptions.reactionSplitLine, set: (v: boolean) => ($globals.env.renderOptions.reactionSplitLine = v), flag: 2 };
+  opts['renderImplicit'] = { get: () => $globals.env.renderOptions.renderImplicit, set: (v: boolean) => ($globals.env.renderOptions.renderImplicit = v), flag: 2 };
+  opts['collapseHydrogens'] = { get: () => $globals.env.renderOptions.collapseH, set: (v: boolean) => ($globals.env.renderOptions.collapseH = v), flag: 2 };
+  opts['ringBondAngleSmall'] = { get: () => $globals.env.renderOptions.ringRestrictAngleSmall, set: (v: boolean) => ($globals.env.renderOptions.ringRestrictAngleSmall = v), flag: 2 };
   for (let key in opts) selectBoolOption.insertAdjacentHTML("beforeend", `<option value='${key}'>${key}</option>`);
 
   p.insertAdjacentHTML("beforeend", " <span>=</span> ");
@@ -74,7 +74,7 @@ function generateSMILESContent() {
   });
   inputBoolOption.addEventListener('change', () => {
     opts[selectBoolOption.value].set(inputBoolOption.checked);
-    parseSmiles($globals.parsedSMILES.smiles);
+    parseSmiles($globals.parsedSMILES.smiles, opts[selectBoolOption.value].flag);
   });
   p.appendChild(inputBoolOption);
 
@@ -299,25 +299,31 @@ function _error(e: Error) {
   utils.canvasWriteText(ctx, e.message, 10, 15);
 }
 
-function parseSmiles(smiles: string) {
+function parseSmiles(smiles: string, flag: 0 | 1 | 2 = 1) {
   const ctx = $globals.canvas.getContext("2d");
   elOutput.innerHTML = '';
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   inputSMILES.value = smiles;
+  if (flag === 0) return;
 
   let ps: ParsedSMILES, parseTime: number;
-  try {
-    parseTime = performance.now();
-    ps = env.parse(smiles);
-    parseTime = performance.now() - parseTime;
-  } catch (e) {
-    elOutput.innerText = `Error!`;
-    _error(e);
-    $globals.error = e;
-    parseTime = -1;
-    return;
+  if (flag === 1) {
+    try {
+      parseTime = performance.now();
+      ps = env.parse(smiles);
+      parseTime = performance.now() - parseTime;
+    } catch (e) {
+      elOutput.innerText = `Error!`;
+      _error(e);
+      $globals.error = e;
+      parseTime = -1;
+      return;
+    }
+    $globals.parsedSMILES = ps;
+  } else {
+    parseTime = 0;
+    ps = $globals.parsedSMILES;
   }
-  $globals.parsedSMILES = ps;
 
   let renderTime = performance.now();
   const image = ps.render();

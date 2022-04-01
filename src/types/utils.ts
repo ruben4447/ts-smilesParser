@@ -15,6 +15,7 @@ export interface IParseInorganicString {
   elements: Map<string, number>;
   charge: number;
   atomicMass?: number;
+  isRadical?: boolean;
   endIndex: number;
   error?: string; // Error message if any
 }

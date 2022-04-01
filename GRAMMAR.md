@@ -5,6 +5,7 @@ The following is my understanding of SMILES syntax. I have used the following li
 - https://www.daylight.com/dayhtml/doc/theory/theory.smiles.html
 - https://archive.epa.gov/med/med_archive_03/web/html/smiles.html
 - https://biocyc.org/help.html?object=smiles
+- https://openbabel.org/wiki/Radicals_and_SMILES_extensions#SMILES_extensions_for_radicals
 
 ##  Atoms
 Atoms are represented by their atomic symbol and are enclosed by square brackets `[X]`
@@ -39,6 +40,13 @@ The following elements are members of the *organic subset*. These may be specifi
 Branches are speficied by enclosing a SMILES string in parentheses `()`
 
 A branch's parent atom is the left-most atom in the SMILES string e.g. `C(CO)`. If a bond is the first character encountered in `()` (e.g. `C(=O)`) then this is the bond that it is connected to its parent atom by.
+
+## Radicals
+Radicals are atoms with one unpaired valence electron.
+
+To define a radical, define the atom in an inorganic group and include a period e.g. `[Cl.]`. Radicals are rendered as normal, with a dot `•` above the group
+
+*Note, a radical cannot have any formal charge, its bond count is not checked and no implicit Hydrogen are added.*
 
 ## Cyclic Structures
 Opened by a number which indicates which ring it is. When a closing digit is reached, these two atoms bond in a ring. e.g. `C1CCC1`
