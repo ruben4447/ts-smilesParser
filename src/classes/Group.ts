@@ -45,12 +45,13 @@ export class Group {
   }
 
   /** Attempt to create bonds with said group. Return: successfull? */
-  public addBond(type: BondType, group: Group, smilesPosition?: number): boolean {
+  public addBond(type: BondType, group: Group, smilesPosition?: number, position?: number): boolean {
     if (this === group) return false;
     if (this.getBondWith(group)) {
       return false;
     } else {
-      this.bonds.push({ bond: type, dest: group.ID, smilesPosition });
+      if (position === undefined) this.bonds.push({ bond: type, dest: group.ID, smilesPosition });
+      else this.bonds.splice(position, 0, { bond: type, dest: group.ID, smilesPosition });
       return true;
     }
   }
@@ -271,9 +272,12 @@ export class Group {
     const items: { text: string, pos: -1 | 0 | 1, colEquiv?: string }[] = [];
     if (brackets) items.push({ text: "[", pos: 0 });
     if (this.atomicMass !== undefined) items.push({ text: this.atomicMass.toString(), pos: 1, colEquiv: Array.from(elements.keys())[0] });
+    let prevEl = "";
     elements.forEach((count, el) => {
-      items.push({ text: el, pos: 0 });
-      if (count !== 1) items.push({ text: count.toString(), pos: -1, colEquiv: el });
+      let colEquiv = el === "H" && count - extraHs === 0 ? (prevEl ?? el) : el;
+      items.push({ text: el, pos: 0, colEquiv });
+      if (count !== 1) items.push({ text: count.toString(), pos: -1, colEquiv });
+      prevEl = el;
     });
     if (brackets) items.push({ text: "]", pos: 0 });
     if (this.charge !== 0) items.push({ text: ((this.charge === 1 || this.charge === -1) ? '' : Math.abs(this.charge).toString()) + (this.charge < 0 ? "-" : "+"), pos: 1, colEquiv: brackets ? undefined : Array.from(this.elements.keys())[0] });

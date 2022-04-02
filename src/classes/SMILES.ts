@@ -357,11 +357,11 @@ export class SMILES {
           // Link last two items?
           if (groups.length >= 2) {
             let one = arrFromBack(groups, 1), two = arrFromBack(groups, 2);
-            let ok = two.addBond(currentBond, one, indexOffset + currentBondPos);
+            let ok = two.addBond(currentBond, one, indexOffset + currentBondPos, 0);
             if (!ok) throw new AdvError(`Bond Error: attempted to create explicit bond between this (${one.toString()}) and last atom (${two.toString()})`, currentBond).setColumnNumber(currentBondPos);
           } else if (groups.length === 1 && parent instanceof Group) {
             // Link to chain parent
-            let ok = parent.addBond(currentBond, groups[0], indexOffset + currentBondPos);
+            let ok = parent.addBond(currentBond, groups[0], indexOffset + currentBondPos, 0);
             if (!ok) throw new AdvError(`Bond Error: attempted to create explicit bond between this (${groups[0].toString()}) and chain parent atom '${parent.toString()}'`, currentBond).setColumnNumber(currentBondPos);
           } else {
             throw new AdvError(`Syntax Error: unexpected bond '${currentBond}'`, currentBond).setColumnNumber(currentBondPos);
@@ -369,15 +369,15 @@ export class SMILES {
           currentBond = undefined;
         } else {
           // With default bond
-          const defaultBond: BondType = '-';
+          const defaultBond = '-';
           if (groups.length >= 2) {
             // Add default, single bond to last atom
             let one = arrFromBack(groups, 1), two = arrFromBack(groups, 2);
-            let ok = two.addBond(defaultBond, one, indexOffset + currentBondPos);
+            let ok = two.addBond(defaultBond, one, indexOffset + currentBondPos, 0);
             if (!ok) throw new AdvError(`Bond Error: attempted to create implicit bond between this (${one.toString()}) and last atom (${two.toString()})`, smiles[pos]).setColumnNumber(pos);
           } else if (groups.length === 1 && parent instanceof Group) {
             // Link to chain parent
-            let ok = parent.addBond(defaultBond, groups[0], indexOffset + currentBondPos);
+            let ok = parent.addBond(defaultBond, groups[0], indexOffset + currentBondPos, 0);
             if (!ok) throw new AdvError(`Bond Error: attempted to create implicit bond between this (${groups[0].toString()}) and chain parent atom '${parent.toString()}'`, smiles[pos]).setColumnNumber(pos);
           }
         }

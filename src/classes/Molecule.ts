@@ -484,49 +484,52 @@ export class Molecule {
     if (Object.keys(this.groups).length === 0) return {};
     if (re === undefined) re = defaultRenderOptsObject;
 
-    const collision = (rec: IRec) => Object.values(posData).find(rec2 => rec.x < rec2.x + rec2.w && rec.x + rec.w > rec2.x && rec.y < rec2.y + rec2.h && rec.h + rec.y > rec2.y) ?? false;
+    const collision = (rec: IRec) => Object.values(posData).find(rec2 => rec.x - rec.w/2 - re.atomOverlapPadding <= rec2.x + rec2.w/2 + re.atomOverlapPadding && rec.x + rec.w/2 + re.atomOverlapPadding >= rec2.x - rec2.w/2 - re.atomOverlapPadding && rec.y - rec.h/2 - re.atomOverlapPadding <= rec2.y + rec2.h/2 + re.atomOverlapPadding && rec.y + rec.h/2 + re.atomOverlapPadding >= rec2.y - rec2.h/2 - re.atomOverlapPadding) ?? false;
     const posData: { [gid: number]: IRec } = {};
-    const processStack: number[] = []; // Stack of group IDs to process
+    const processStack: { id: number, fromId?: number, fromθ: number }[] = []; // Stack of group IDs to process
     const doneGroups = new Set<number>();
-    const inRings = new Set<number>(); // Set of all groups which have been sorted into a ring structure
+    const positionedInRing = new Set<number>(); // Set of all groups which have been sorted into a ring structure
+    const ringMember = new Set<number>(); // Set of all group IDs which is a member of a ring
+    Object.values(this.rings).forEach(ring => ring.members.forEach(mid => ringMember.add(mid)));
     const rings = new Map<number, { minX: number, maxX: number, minY: number, maxY: number }>();
-    const angles = new Map<number, [number, number]>(); // Group IDs to angle [start, end]
+    const angles = new Map<number, [number, number, boolean]>(); // Group IDs to angle [start, end, exclusive]
+    const skeletalAngleMul = new Map<number, number>();
     let iters = 0;
     
     // For each group, populate text width/height
     for (let id in this.groups) {
-      angles.set(+id, [0, 2*Math.PI]);
-      let { width: w, height: h } = this.groups[+id].getRenderAsTextDimensions(ctx, re, re.renderImplicit && re.collapseH ? this.getAllBonds(+id).filter(bond => this.groups[bond.dest].isImplicit && this.groups[bond.dest].isElement("H")).length : 0);
+      angles.set(+id, [0, 2*Math.PI, false]);
+      let { width: w, height: h } = re.skeletal && this.groups[id].isElement("C") ? { width: 0, height: 0 } : this.groups[id].getRenderAsTextDimensions(ctx, re, re.renderImplicit && re.collapseH ? this.getAllBonds(+id).filter(bond => this.groups[bond.dest].isImplicit && this.groups[bond.dest].isElement("H")).length : 0);
       posData[id] = { x: NaN, y: NaN, w, h };
     }
 
     // Start with forst group
     let gid = +Object.keys(this.groups)[0];
-    processStack.push(gid);
+    processStack.push({ id: gid, fromθ: 0 });
     posData[gid].x = 0;
     posData[gid].y = 0;
+    skeletalAngleMul.set(gid, 1);
 
     while (processStack.length !== 0) {
-      const gid = processStack.pop();
-      if (!doneGroups.has(gid)) {
-        const rec = posData[gid]; // Current position vector
-        // Get bonds
-        let bonds = this.getAllBonds(gid);
-        if (!re.renderImplicit) bonds = bonds.filter(bond => !this.groups[bond.dest].isImplicit);
-        else if (re.collapseH) bonds = bonds.filter(bond => !(this.groups[bond.dest].isImplicit && this.groups[bond.dest].isElement("H")));
+      const { id, fromId, fromθ } = processStack.pop();
+      if (!doneGroups.has(id)) {
+        const rec = posData[id]; // Current position vector
 
-        const ring = this.rings.find(ring => ring.members.some(mid => mid === gid));
+        // In ring?
+        const ring = this.rings.find(ring => ring.members.some(mid => mid === id));
         if (ring) {
           if (!rings.has(ring.ID)) {
-            const interior = 2*Math.PI / ring.members.length; // Interior angle
+            let interior = 2*Math.PI / ring.members.length; // Interior angle
+            if ((fromθ < 1.5 * Math.PI && fromθ > 0.5 * Math.PI) || (fromθ > -0.5 * Math.PI && fromθ < -1.5*Math.PI)) interior -= Math.PI;
             const rot = Math.PI/2 - interior/2;
             const ext = Math.PI - 2*rot;
-            let angle = angles.get(gid)[0] + rot;
+            let angle = angles.get(id)[0] + fromθ + rot;
             let x = rec.x, y = rec.y, minX = x, maxX = x, minY = y, maxY = y;
+            const bondLength = Math.max(...ring.members.map((m, i) => re.bondLength + (posData[m].w + posData[ring.members[(i + 1) % ring.members.length]].w) / 2.5));
             for (let k = 0; k < ring.members.length; k++) {
-              inRings.add(ring.members[k]);
+              positionedInRing.add(ring.members[k]);
               const rec = posData[ring.members[k]];
-              let [dx, dy] = rotateCoords(re.bondLength + rec.w, angle);
+              let [dx, dy] = rotateCoords(bondLength, angle);
               rec.x = x;
               rec.y = y;
               if (x > maxX) maxX = x;
@@ -535,31 +538,36 @@ export class Molecule {
               if (y < minY) minY = y;
               x += dx;
               y += dy;
-              angles.set(ring.members[k], re.ringRestrictAngleSmall ? [angle + Math.PI, angle + ext] : [angle, angle + 2*(Math.PI - ext)]);
+              angles.set(ring.members[k], re.ringRestrictAngleSmall ? [angle + Math.PI, angle + ext, true] : [angle, angle + 2*(Math.PI - ext), true]);
               angle -= ext;
             }
             rings.set(ring.ID, { minX, maxX, minY, maxY });
           }
         }
 
-        let [ θu, θv ] = angles.get(gid); // Start/end angle
-        let df = (iters === 0 ? bonds.length : bonds.length - 1);
-        // bonds.filter(bond => !inRings.has(bond.dest)).length;
+        // Get bonds
+        let bondsTE = this.getAllBonds(id); // Bonds to explore
+        if (!re.renderImplicit || (re.skeletal && this.groups[id].isElement("C"))) bondsTE = bondsTE.filter(bond => !this.groups[bond.dest].isImplicit);
+        else if (re.collapseH) bondsTE = bondsTE.filter(bond => !(this.groups[bond.dest].isImplicit && this.groups[bond.dest].isElement("H")));
+        let bondsTR = bondsTE.filter(bond => !positionedInRing.has(bond.dest)); // Bonds to render
+
+        let [θu, θv, θexcl ] = angles.get(id); // Start/end angle
+        const sθ = re.skeletal && !ringMember.has(id) && this.groups[id].isElement("C") && skeletalAngleMul.get(id)/fromθ === -2 ? skeletalAngleMul.get(id) * re.skeletalAngle : 0; // Skeletal angle adjustment
+        let df = iters === 0 || bondsTR.length === 1 ? bondsTR.length : bondsTR.length - 1;
+        if (θexcl) df++;
         let θi = (θv - θu) / df; // angle increment
-        // console.log({ θu, θv, df, θi });
-        for (let i = 0, θ = θu; i < bonds.length; i++) {
-          let did = bonds[i].dest, θc = θ; // Copy angle
+        for (let i = 0, θ = θu + (θexcl ? θi : 0); i < bondsTE.length; i++) {
+          let did = bondsTE[i].dest, sθc = ringMember.has(did) && fromθ % Math.PI !== 0 ? 0 : sθ, θc = θ + sθc; // Copy angle
           if (!doneGroups.has(did)) {
+            // console.log({ did, fromθ, θu, θv, θ, sθ, sθc});
             // Avoid collisions
-            if (!inRings.has(did)) {
+            if (!positionedInRing.has(did)) {
               let bondLength = re.bondLength + rec.w / 2 + posData[did].w / 2; // Account for overlap from text
               let num = 1, denom = 1; // For finding fraction of angle
               let x: number, y: number;
               while (true) {
                 ([x, y] = rotateCoords(bondLength, θc));
-                const rec1 = { ...rec };
-                rec1.x += x;
-                rec1.y += y;
+                const rec1 = { x: rec.x + x, y: rec.y + y, w: posData[did].w, h: posData[did].h };
                 if (collision(rec1)) {
                   θc += θi * (num / denom);
                   if (num >= denom) {
@@ -573,11 +581,12 @@ export class Molecule {
               posData[did].x = rec.x + x;
               posData[did].y = rec.y + y;
             }
-            processStack.push(did);
+            processStack.push({ id: did, fromId: id, fromθ: θc % (2*Math.PI) });
+            skeletalAngleMul.set(did, (sθc === 0 ? 1 : -1) * skeletalAngleMul.get(id)); // Alternate
             θ += θi; // Increase angle
           }
         }
-        doneGroups.add(gid);
+        doneGroups.add(id);
         iters++;
       }
     }
@@ -672,22 +681,36 @@ export class Molecule {
     }
 
     // Loop through rings
-    rings.forEach(({ minX, maxX, minY, maxY }, id) => {
+    rings.forEach((obj, id) => {
       const ring = this.rings.find(r => r.ID === id);
-      const rx = (maxX - minX) / 2, ry = (maxY - minY) / 2;
+      // Calculate inner bounds
+      let dx = Math.max(...ring.members.map(mem => positions[mem].w / 2));
+      let dy = Math.max(...ring.members.map(mem => positions[mem].h / 2));
+      let minX = obj.minX + dx, maxX = obj.maxX - dx, minY = obj.minY + dy, maxY = obj.maxY - dy;
+      const rx = (maxX - minX) / 2, ry = (maxY - minY) / 2, r = Math.min(rx, ry);
       // Aromatic?
       if (ring.isAromatic) {
         ctx.beginPath();
         ctx.lineWidth = re.bondWidth;
         ctx.strokeStyle = re.defaultAtomColor;
-        const r = Math.min(rx * re.aromaticRingDist, ry * re.aromaticRingDist);
-        ctx.arc(minX + rx, minY + ry, r, 0, 2 * Math.PI);
+        ctx.arc(minX + rx, minY + ry, r - re.aromaticRingGap, 0, 2 * Math.PI);
         ctx.stroke();
       }
-      // Debug: show ID?
-      if (re.debugShowRingIDs) {
-        ctx.font = re.debugFont.toString();
+      if (re.debugRings) {
+        // Bounding box: outer
+        ctx.strokeStyle = "#00FF00";
+        ctx.strokeRect(obj.minX, obj.minY, obj.maxX - obj.minX, obj.maxY - obj.minY);
+        // Bounding box: inner
+        ctx.strokeStyle = "#FF00FF";
+        ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+        // Centre
+        ctx.beginPath();
+        ctx.fillStyle = "red";
+        ctx.arc(minX + rx, minY + ry, 2, 0, 2*Math.PI);
+        ctx.fill();
+        // ID
         ctx.fillStyle = "mediumblue";
+        ctx.font = re.debugFont.toString();
         ctx.fillText(id.toString(), minX + rx, minY + ry);
       }
     });
@@ -697,8 +720,12 @@ export class Molecule {
       let rec = positions[id], group = this.groups[id], P = 4, extraHs = 0;
       if (re.renderImplicit && re.collapseH) extraHs = this.getAllBonds(group.ID).filter(bond => (this.groups[bond.dest].isImplicit ? re.renderImplicit : false) && this.groups[bond.dest].isElement("H")).length;
       ctx.fillStyle = re.bg;
-      ctx.fillRect(rec.x - rec.w / 2 - P, rec.y - rec.h / 2 - P, rec.w + 2 * P, rec.h + 2 * P);
-      group.renderAsText(ctx, { x: rec.x - rec.w / 2, y: rec.y + rec.h * 0.25 }, re, extraHs);
+      if (re.skeletal && group.isElement("C")) {
+        // Pass
+      } else {
+        ctx.fillRect(rec.x - rec.w / 2 - P, rec.y - rec.h / 2 - P, rec.w + 2 * P, rec.h + 2 * P);
+        group.renderAsText(ctx, { x: rec.x - rec.w / 2, y: rec.y + rec.h * 0.25 }, re, extraHs);
+      }
 
       if (group.isRadical) {
         ctx.beginPath();
@@ -707,21 +734,29 @@ export class Molecule {
         ctx.fill();
       }
 
-      if (re.debugShowGroupIDs) {
+      if (re.debugGroups) {
+        // Centre
+        ctx.beginPath();
+        ctx.fillStyle = "red";
+        ctx.arc(rec.x, rec.y, 2, 0, 2*Math.PI);
+        ctx.fill();
+        // ID
         ctx.fillStyle = "mediumblue";
         ctx.font = re.debugFont.toString();
         ctx.fillText(group.ID.toString(), rec.x + rec.w / 2, rec.y);
-      }
-      if (re.debugGroupBoundingBoxes) {
+        // Bounding box with Overlap Padding
+        ctx.strokeStyle = "#00FF00";
+        ctx.strokeRect(rec.x - rec.w / 2 - re.atomOverlapPadding, rec.y - rec.h / 2 - re.atomOverlapPadding, rec.w + 2 * re.atomOverlapPadding, rec.h + 2 * re.atomOverlapPadding);
+        // Bounding box
         ctx.strokeStyle = "#FF00FF";
         ctx.strokeRect(rec.x - rec.w / 2, rec.y - rec.h / 2, rec.w, rec.h);
       }
     }
 
-    // Angles?
+    // Angles of rotation?
     if (re.debugShowAngles) {
       ctx.font = re.debugFont.toString();
-      let L = re.bondLength * 0.3, LINES = 5;
+      let L = re.bondLength * 0.3, LINES = re.debugAngleLines ?? 5;
       angles.forEach(([u, v], id) => {
         if (this.groups[id].isImplicit) return;
         const { x, y } = positions[id];

@@ -84,13 +84,16 @@ export interface IRenderOptions {
   atomColors: { [el: string]: string };
   bondLength: number;
   bondWidth: number;
+  atomOverlapPadding: number;
   textPadding: number; // Padding between letters in text
   renderImplicit: boolean; // Render implicit molecules?
   collapseH: boolean;
+  skeletal: boolean; // If true, do not render carbons
+  skeletalAngle: number;
   bondGap: number; // Gap between double and triple bonds
   font: Font;
   smallFont: Font;
-  aromaticRingDist: number;
+  aromaticRingGap: number; // Gap from outside of aromatic ring to aromatic bond (px)
   ringRestrictAngleSmall: boolean; // Bigger or smaller restrict space
   boxMolecules: boolean; // Render molecules in boxes
   moleculePadding: number;
@@ -99,10 +102,10 @@ export interface IRenderOptions {
   radicalRadius: number;
 
   debugFont: Font;
-  debugShowGroupIDs?: boolean;
-  debugShowRingIDs?: boolean;
+  debugGroups?: boolean;
+  debugRings?: boolean;
   debugShowAngles?: boolean;
-  debugGroupBoundingBoxes?: boolean;
+  debugAngleLines?: number;
 }
 
 export const createRenderOptsObject = (): IRenderOptions => ({
@@ -121,13 +124,16 @@ export const createRenderOptsObject = (): IRenderOptions => ({
     I: "#934DB0",
     Br: "#D35400"
   },
-  bondLength: 25,
+  bondLength: 32,
   bondWidth: 1,
+  atomOverlapPadding: 4,
   textPadding: 1,
   renderImplicit: true,
   collapseH: true,
+  skeletal: false,
+  skeletalAngle: Math.PI/5,
   bondGap: 5,
-  aromaticRingDist: 0.71,
+  aromaticRingGap: 10,
   ringRestrictAngleSmall: false,
   font: new Font().set("family", "Arial").set("size", 15),
   smallFont: new Font().set("family", "Arial").set("size", 10),

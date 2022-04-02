@@ -19,8 +19,11 @@ function _main() {
   env = new SMILES();
   $globals.env = env;
   env.parseOptions.addImplicitHydrogens = true;
+  env.parseOptions.checkBondCount = false;
+  env.renderOptions.skeletal = true;
+  env.renderOptions.renderImplicit = true;
   env.renderOptions.collapseH = true;
-  env.renderOptions.reactionSplitLine = false;
+  env.renderOptions.bondLength *= 2;
 
   const tabContainer = document.createElement('div');
   const tabMap = Tabs.createMap();
@@ -32,12 +35,15 @@ function _main() {
   tabs.open("smiles");
   document.body.appendChild(tabContainer);
 
+  // parseSmiles("N{-}(C)(CC1CCC1)");
   // parseSmiles("CS(=O)(=O)O.F>>C(F)(F)(F)S(=O)(=O)O.[H2]");
   // parseSmiles("C=C>[H2].[Ni]>CC");
   // parseSmiles("C.ClCl>>CCl.ClCCl.C(Cl)(Cl)Cl.ClC(Cl)(Cl)Cl.[H]Cl");
-  // parseSmiles("C1=CC=C(C(=C1)CC(=O)O)NC2=C(C=CC=C2Cl)Cl");
-  parseSmiles("ClCl>>[Cl.].[Cl.]");
+  parseSmiles("C1=CC=C(C(=C1)CC(=O)O)NC2=C(C=CC=C2Cl)Cl");
+  // parseSmiles("ClCl>>[Cl.].[Cl.]");
   // parseSmiles("CC1:C(:C:C(:C:C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
+  // parseSmiles("Cc1c(cc(cc1[NO2])[NO2])[NO2]");
+  // parseSmiles("CCCCCC");
 }
 
 function generateSMILESContent() {
@@ -60,10 +66,11 @@ function generateSMILESContent() {
   for (let key in createParseOptionsObject()) {
     opts[key] = { get: () => $globals.env.parseOptions[key], set: (v: boolean) => ($globals.env.parseOptions[key] = v), flag: 1 };
   }
-  opts['reactionSplitLine'] = { get: () => $globals.env.renderOptions.reactionSplitLine, set: (v: boolean) => ($globals.env.renderOptions.reactionSplitLine = v), flag: 2 };
+  opts['renderSkeletal'] = { get: () => $globals.env.renderOptions.skeletal, set: (v: boolean) => ($globals.env.renderOptions.skeletal = v), flag: 2 };
   opts['renderImplicit'] = { get: () => $globals.env.renderOptions.renderImplicit, set: (v: boolean) => ($globals.env.renderOptions.renderImplicit = v), flag: 2 };
   opts['collapseHydrogens'] = { get: () => $globals.env.renderOptions.collapseH, set: (v: boolean) => ($globals.env.renderOptions.collapseH = v), flag: 2 };
   opts['ringBondAngleSmall'] = { get: () => $globals.env.renderOptions.ringRestrictAngleSmall, set: (v: boolean) => ($globals.env.renderOptions.ringRestrictAngleSmall = v), flag: 2 };
+  opts['reactionSplitLine'] = { get: () => $globals.env.renderOptions.reactionSplitLine, set: (v: boolean) => ($globals.env.renderOptions.reactionSplitLine = v), flag: 2 };
   for (let key in opts) selectBoolOption.insertAdjacentHTML("beforeend", `<option value='${key}'>${key}</option>`);
 
   p.insertAdjacentHTML("beforeend", " <span>=</span> ");
