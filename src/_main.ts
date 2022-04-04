@@ -4,11 +4,12 @@ globalThis.utils = utils;
 import * as dataVars from './data-vars';
 globalThis.dataVars = dataVars;
 import $globals from './globals';
-import { moleculeTypes, reactions } from './organic';
+import { moleculeIDsToString, moleculeTypes, reactions } from './organic';
 import { Tabs } from './classes/Tabs';
 import { Molecule } from './classes/Molecule';
 import { IGroupStrMap } from './types/Group';
 import { createParseOptionsObject } from './types/SMILES';
+import { IReactReturn } from './types/utils';
 globalThis.$globals = $globals;
 
 var canvas: HTMLCanvasElement, env: SMILES;
@@ -41,7 +42,7 @@ function _main() {
   // parseSmiles("C.ClCl>>CCl.ClCCl.C(Cl)(Cl)Cl.ClC(Cl)(Cl)Cl.[H]Cl");
   // parseSmiles("C1=CC=C(C(=C1)CC(=O)O)NC2=C(C=CC=C2Cl)Cl");
   // parseSmiles("C=COC1=COC=C1");
-  parseSmiles("C=C.[H2]>[Ni]>CC");
+  parseSmiles("C=C");
   // parseSmiles("ClCl>>[Cl.].[Cl.]");
   // parseSmiles("CC1:C(:C:C(:C:C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
   // parseSmiles("Cc1c(cc(cc1[NO2])[NO2])[NO2]");
@@ -184,12 +185,12 @@ function generateAnalyseMoleculeContent() {
       reactions.forEach((info, i) => {
         if (info.start === +id || moleculeTypes[id].variantOf === info.start) {
           const li = document.createElement("li");
-          li.insertAdjacentHTML("beforeend", `<span> &rarr; ${moleculeTypes[info.end].name}</span> &nbsp;`);
+          li.insertAdjacentHTML("beforeend", `<span> &rarr; ${moleculeIDsToString(info.end)}</span> &nbsp;`);
           const btn = document.createElement("button");
           btn.addEventListener("click", () => {
-            let text = `Carry out reaction ${moleculeTypes[info.start].name} -> ${moleculeTypes[info.end].name} ?${info.name ? '\nReaction Name: ' + info.name : ''}${info.type ? '\nReaction Mechanism: ' + info.type : ''}${info.conditions ? '\nConditions: ' + info.conditions : ''}${info.reagents ? '\nReagents: ' + info.reagents : ''}`;
+            let text = `Carry out reaction ${moleculeTypes[info.start].name} -> ${moleculeIDsToString(info.end)} ?${info.name ? '\nReaction Name: ' + info.name : ''}${info.type ? '\nReaction Mechanism: ' + info.type : ''}${info.conditions ? '\nConditions: ' + info.conditions : ''}${info.reagents ? '\nReagents: ' + info.reagents : ''}`;
             let resp = info.provideReactant ? prompt(`${text}\n${info.provideReactant.prompt}`, info.provideReactant.default) : confirm(text);
-            let ok: { ok: boolean, data?: string, cont?: boolean } = { ok: true };
+            let ok: IReactReturn = { ok: true };
             if (resp) {
               if (info.react) {
                 let reactant: Molecule;
@@ -222,6 +223,9 @@ function generateAnalyseMoleculeContent() {
               }
             }
 
+            if (ok.add) {
+              ok.add.forEach(mol => $globals.parsedSMILES.addMolecule(mol))
+            }
             if (ok.ok) {
               analyse();
               parseSmiles($globals.parsedSMILES.generateSMILES(), 2);
@@ -286,7 +290,7 @@ function generateFunctionalGroupsContent() {
       ourReactions.forEach(reaction => {
         const tr = document.createElement("tr");
         tbody.appendChild(tr);
-        tr.insertAdjacentHTML("beforeend", `<td>${moleculeTypes[reaction.start].name} &rarr; ${moleculeTypes[reaction.end].name}`);
+        tr.insertAdjacentHTML("beforeend", `<td>${moleculeTypes[reaction.start].name} &rarr; ${moleculeIDsToString(reaction.end)}`);
         tr.insertAdjacentHTML("beforeend", `<td>${reaction.name ?? ''}</td>`);
         tr.insertAdjacentHTML("beforeend", `<td>${reaction.type ?? ''}</td>`);
         tr.insertAdjacentHTML("beforeend", `<td>${reaction.reagents ?? ''}</td>`);

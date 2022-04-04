@@ -48,6 +48,15 @@ export class Molecule {
     return Mr;
   }
 
+  /** Get bond object between two groups, or NULL */
+  public getBond(id1: number, id2: number) {
+    let bond = this.groups[id1].bonds.find(b => b.dest === id2);
+    if (bond) return bond;
+    bond = this.groups[id2].bonds.find(b => b.dest === id1);
+    if (bond) return bond;
+    return null;
+  }
+
   /** Get all bonds to/from a group ID (.dest is group groupID is bonded to) */
   public getAllBonds(groupID: number) {
     const bonds: IBond[] = this.groups[groupID].bonds.map(bond => ({ ...bond }));
@@ -64,6 +73,20 @@ export class Molecule {
     return bonds;
   }
 
+  /** Sever bond between two groups */
+  public severBond(id1: number, id2: number) {
+    let i = this.groups[id1].bonds.findIndex(b => b.dest === id2);
+    if (i === -1) {
+      i = this.groups[id2].bonds.findIndex(b => b.dest === id1);
+      if (i === -1) return false;
+      this.groups[id2].bonds.splice(i, 1);
+      return true;
+    } else {
+      this.groups[id1].bonds.splice(i, 1);
+      return true;
+    }
+  }
+
   /** Get total bond count for a group */
   public getBondCount(groupID: number) {
     let count = 0;
@@ -75,7 +98,7 @@ export class Molecule {
     return count;
   }
 
-  /** Remove unbonded groups from molecule, starting from a given group */
+  /** Remove unbonded groups from molecule, starting from a given group. Return all discarded groups */
   public removeUnbondedGroups(startID: number) {
     const bondedGroups = new Set<number>(); // Set of group IDs which are bonded
     bondedGroups.add(startID);
@@ -97,11 +120,14 @@ export class Molecule {
     }
 
     // Remove all groups which are not bonded
+    const discarded: { [gid: number]: Group } = {};
     for (let gid in this.groups) {
       if (!bondedGroups.has(+gid)) {
+        discarded[gid] = this.groups[gid];
         delete this.groups[gid]; // Remove
       }
     }
+    return discarded;
   }
 
   /** Add implicit hydrogens to atoms e.g. C -> C([H])([H])[H]. Note, these hydrogens are marked as implicit and will not be in generated SMILES */

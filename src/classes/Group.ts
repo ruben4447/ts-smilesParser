@@ -23,14 +23,20 @@ export class Group {
   public readonly chainDepth: number;
   public isImplicit = false; // Mainly for Hydrogens
 
-  public constructor(data?: IGroupInformation) {
+  public constructor(data?: IGroupInformation | string[]) {
     if (data === undefined) data = {};
+    let els: string[] = [];
+    if (Array.isArray(data)) {
+      els = data;
+      data = {};
+    }
     this.elements = data.elements || new Map();
     this.charge = data.charge === undefined ? 0 : data.charge;
     this.ringDigits = data.ringDigits || [];
     this.bonds = data.bonds || [];
     this.chainDepth = data.chainDepth === undefined ? 0 : data.chainDepth;
     this.isRadical = !!data.isRadical;
+    els.forEach(el => this.addElement(el))
   }
 
   /** Is in organic subset */

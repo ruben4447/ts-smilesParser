@@ -40,16 +40,24 @@ export interface IReactionInfo {
   name?: string; // Reaction name e.g. "Halogenation"
   type?: string; // Reaction mechanism e.g. "nucleophilic addition"
   start: number; // ID of starting molecule type
-  end: number; // ID of ending molecule type
+  end: number | number[]; // ID of ending molecule type
   reagents?: string; // Reagents of reaction
   conditions?: string; // Condition of reaction
-  react?: (mol: Molecule, fgroup: IGroupStrMap, opts: IReactionOpts, reactant?: Molecule) => { ok: boolean; data?: string, cont?: boolean }; // Carry out reaction
+  react?: (mol: Molecule, fgroup: IGroupStrMap, opts: IReactionOpts, reactant?: Molecule) => IReactReturn; // Carry out reaction
   reactOnce?: boolean; // Call .react only once? (default = false)
   provideReactant?: {
     prompt: string; // Prompt to show user
     default: string; // Default prompt input
     smilesOpts?: { [param: string]: boolean } // Overwrite SMILES.parseOptions
   }; // Ask user for reactant molecule?
+}
+
+/** Return value from OrganicGroup.react() */
+export interface IReactReturn {
+  ok: boolean; // Reaction success?
+  data?: string; // Data return - error message if ok is FALSE
+  cont?: boolean; // Continue reactinf if TRUE
+  add?: Molecule[]; // Array of molecules to add to system
 }
 
 export interface IReactionOpts {
