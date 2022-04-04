@@ -23,7 +23,7 @@ function _main() {
   env.renderOptions.skeletal = true;
   env.renderOptions.renderImplicit = true;
   env.renderOptions.collapseH = true;
-  env.renderOptions.bondLength *= 2;
+  env.renderOptions.bondLength = 80;
 
   const tabContainer = document.createElement('div');
   const tabMap = Tabs.createMap();
@@ -39,11 +39,12 @@ function _main() {
   // parseSmiles("CS(=O)(=O)O.F>>C(F)(F)(F)S(=O)(=O)O.[H2]");
   // parseSmiles("C=C>[H2].[Ni]>CC");
   // parseSmiles("C.ClCl>>CCl.ClCCl.C(Cl)(Cl)Cl.ClC(Cl)(Cl)Cl.[H]Cl");
-  parseSmiles("C1=CC=C(C(=C1)CC(=O)O)NC2=C(C=CC=C2Cl)Cl");
+  // parseSmiles("C1=CC=C(C(=C1)CC(=O)O)NC2=C(C=CC=C2Cl)Cl");
+  // parseSmiles("C=COC1=COC=C1");
+  parseSmiles("C=C.[H2]>[Ni]>CC");
   // parseSmiles("ClCl>>[Cl.].[Cl.]");
   // parseSmiles("CC1:C(:C:C(:C:C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
   // parseSmiles("Cc1c(cc(cc1[NO2])[NO2])[NO2]");
-  // parseSmiles("CCCCCC");
 }
 
 function generateSMILESContent() {
@@ -63,10 +64,10 @@ function generateSMILESContent() {
   p.appendChild(selectBoolOption);
   // Allow user to configure stuff
   const opts = {};
+  opts['renderSkeletal'] = { get: () => $globals.env.renderOptions.skeletal, set: (v: boolean) => ($globals.env.renderOptions.skeletal = v), flag: 2 };
   for (let key in createParseOptionsObject()) {
     opts[key] = { get: () => $globals.env.parseOptions[key], set: (v: boolean) => ($globals.env.parseOptions[key] = v), flag: 1 };
   }
-  opts['renderSkeletal'] = { get: () => $globals.env.renderOptions.skeletal, set: (v: boolean) => ($globals.env.renderOptions.skeletal = v), flag: 2 };
   opts['renderImplicit'] = { get: () => $globals.env.renderOptions.renderImplicit, set: (v: boolean) => ($globals.env.renderOptions.renderImplicit = v), flag: 2 };
   opts['collapseHydrogens'] = { get: () => $globals.env.renderOptions.collapseH, set: (v: boolean) => ($globals.env.renderOptions.collapseH = v), flag: 2 };
   opts['ringBondAngleSmall'] = { get: () => $globals.env.renderOptions.ringRestrictAngleSmall, set: (v: boolean) => ($globals.env.renderOptions.ringRestrictAngleSmall = v), flag: 2 };
@@ -84,6 +85,7 @@ function generateSMILESContent() {
     parseSmiles($globals.parsedSMILES.smiles, opts[selectBoolOption.value].flag);
   });
   p.appendChild(inputBoolOption);
+  inputBoolOption.checked = opts[selectBoolOption.value].get();
 
   elOutput = document.createElement("p");
   container.appendChild(elOutput);
@@ -222,6 +224,7 @@ function generateAnalyseMoleculeContent() {
 
             if (ok.ok) {
               analyse();
+              parseSmiles($globals.parsedSMILES.generateSMILES(), 2);
               if (ok.data) alert(ok.data);
             } else {
               alert("Reaction failed: " + ok.data);
@@ -306,13 +309,13 @@ function _error(e: Error) {
   utils.canvasWriteText(ctx, e.message, 10, 15);
 }
 
-function parseSmiles(smiles: string, flag: 0 | 1 | 2 = 1) {
+function parseSmiles(smiles?: string, flag: 0 | 1 | 2 = 1) {
   const ctx = $globals.canvas.getContext("2d");
   elOutput.innerHTML = '';
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  inputSMILES.value = smiles;
+  if (smiles !== undefined) inputSMILES.value = smiles;
   if (flag === 0) return;
-
+  
   let ps: ParsedSMILES, parseTime: number;
   if (flag === 1) {
     try {
@@ -352,7 +355,15 @@ function parseSmiles(smiles: string, flag: 0 | 1 | 2 = 1) {
     mdiv.appendChild(el);
 
     el.insertAdjacentHTML("beforeend", `<span>&bull; &nbsp; ${molecule.generateSMILES()} | ${molecule.generateMolecularFormula({}, true)} | Mr ${utils.numstr(molecule.calculateMr())} | `);
-    const btn = document.createElement("button");
+    let btn = document.createElement("button");
+    btn.innerText = "Remove";
+    btn.addEventListener("click", () => {
+      $globals.parsedSMILES.removeMolecule(molecule);
+      parseSmiles($globals.parsedSMILES.generateSMILES(), 2);
+    });
+    el.appendChild(btn);
+    el.insertAdjacentHTML("beforeend", " | ");
+    btn = document.createElement("button");
     btn.innerText = "Analyse";
     btn.addEventListener("click", () => {
       prepAnalyseMolecule(molecule);

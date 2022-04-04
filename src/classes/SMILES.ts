@@ -421,6 +421,30 @@ export class ParsedSMILES {
     this.reactionIndexes = [];
   }
 
+  /** Add molecule */
+  public addMolecule(mol: Molecule, pos?: number) {
+    mol.rings.forEach(ring => this.rings.push(ring));
+    if (pos === undefined) pos = this.molecules.length - 1;
+    if (pos <= this.reactionIndexes[0] + 1) {
+      this.molecules.splice(pos, 0, mol);
+      this.reactionIndexes = this.reactionIndexes.map(i => i + 1);
+    } else {
+      let j = 1 + this.reactionIndexes.findIndex((_, j, ri) => pos >= ri[j] && (ri[j + 1] === undefined || pos < ri[j + 1]));
+      this.molecules.splice(pos, 0, mol);
+      this.reactionIndexes = this.reactionIndexes.map((_, i) => j >= i ? i + 1 : i);
+    }
+  }
+
+  /** Remove molecule */
+  public removeMolecule(mol: Molecule) {
+    const i = this.molecules.findIndex(m => m === mol);
+    if (i === -1) return false;
+    this.molecules.splice(i, 1);
+    this.reactionIndexes = this.reactionIndexes.map(ri => ri >= i ? ri - 1 : ri);
+    this.rings = this.rings.filter(ring => !mol.rings.includes(ring));
+    return true;
+  }
+
   /** Generate SMILES string from parsed data.
    * @param showImplicits - Render implicit groups? (if .isImplicit === true)
   */

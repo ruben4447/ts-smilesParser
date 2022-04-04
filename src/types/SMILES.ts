@@ -83,6 +83,7 @@ export interface IRenderOptions {
   defaultAtomColor: string;
   atomColors: { [el: string]: string };
   bondLength: number;
+  smallBondLengthFrac: number; // Fraction of bondLength that small bonds should be
   bondWidth: number;
   atomOverlapPadding: number;
   textPadding: number; // Padding between letters in text
@@ -110,8 +111,8 @@ export interface IRenderOptions {
 
 export const createRenderOptsObject = (): IRenderOptions => ({
   // bg: "#FFFFFF",
-  bg: "#E0E0E0",
-  defaultAtomColor: "#000000",
+  bg: "#E4E4E4",
+  defaultAtomColor: "#222222",
   atomColors: {
     B: "#E67E22",
     C: "#000000",
@@ -125,13 +126,14 @@ export const createRenderOptsObject = (): IRenderOptions => ({
     Br: "#D35400"
   },
   bondLength: 32,
+  smallBondLengthFrac: 0.85,
   bondWidth: 1,
   atomOverlapPadding: 4,
   textPadding: 1,
   renderImplicit: true,
   collapseH: true,
   skeletal: false,
-  skeletalAngle: Math.PI/5,
+  skeletalAngle: Math.PI/7,
   bondGap: 5,
   aromaticRingGap: 10,
   ringRestrictAngleSmall: false,

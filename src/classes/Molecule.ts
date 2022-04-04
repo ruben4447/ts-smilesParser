@@ -552,14 +552,15 @@ export class Molecule {
         let bondsTR = bondsTE.filter(bond => !positionedInRing.has(bond.dest)); // Bonds to render
 
         let [θu, θv, θexcl ] = angles.get(id); // Start/end angle
-        const sθ = re.skeletal && !ringMember.has(id) && this.groups[id].isElement("C") && skeletalAngleMul.get(id)/fromθ === -2 ? skeletalAngleMul.get(id) * re.skeletalAngle : 0; // Skeletal angle adjustment
+        const sθ = re.skeletal && !ringMember.has(id) && ((skeletalAngleMul.get(id)*re.skeletalAngle)/fromθ === -1 || bondsTE.some(bond => this.groups[bond.dest].isElement("C") && !ringMember.has(bond.dest))) ? skeletalAngleMul.get(id) * re.skeletalAngle : 0; // Skeletal angle adjustment
         let df = iters === 0 || bondsTR.length === 1 ? bondsTR.length : bondsTR.length - 1;
         if (θexcl) df++;
         let θi = (θv - θu) / df; // angle increment
         for (let i = 0, θ = θu + (θexcl ? θi : 0); i < bondsTE.length; i++) {
-          let did = bondsTE[i].dest, sθc = ringMember.has(did) && fromθ % Math.PI !== 0 ? 0 : sθ, θc = θ + sθc; // Copy angle
+          let did = bondsTE[i].dest, sθc = (ringMember.has(did) && fromθ % Math.PI !== 0) ? 0 : sθ;
+          if (!this.groups[id].isElement("C") && !this.groups[did].isElement("C")) sθc = fromθ - Math.PI * 0.5;
+          let θc = θ + sθc; // Copy angle
           if (!doneGroups.has(did)) {
-            // console.log({ did, fromθ, θu, θv, θ, sθ, sθc});
             // Avoid collisions
             if (!positionedInRing.has(did)) {
               let bondLength = re.bondLength + rec.w / 2 + posData[did].w / 2; // Account for overlap from text
@@ -597,6 +598,10 @@ export class Molecule {
   public render(ctx: OffscreenCanvasRenderingContext2D, re?: IRenderOptions): ImageData {
     if (Object.values(this.groups).length === 0) return ctx.createImageData(1, 1); // "Empty" image
     if (re === undefined) re = createRenderOptsObject();
+
+    const ringMember = new Set<number>(); // Set of all group IDs which is a member of a ring
+    Object.values(this.rings).forEach(ring => ring.members.forEach(mid => ringMember.add(mid)));
+
     const { pos: positions, rings, angles } = this.getGroupPositions(ctx, re), rects = Object.values(positions);
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const rec of rects) {
@@ -636,45 +641,47 @@ export class Molecule {
     // Bonds
     ctx.strokeStyle = re.defaultAtomColor;
     ctx.lineWidth = re.bondWidth;
+    ctx.lineCap = "round";
     const GSTART = 0.35, GSTOP = 0.65;
+    const drawBondLine = (sid: number, eid: number, pos: -1 | 0 | 1, c1: string, c2: string) => {
+      let start: IVec, end: IVec;
+      start = { x: positions[sid].x, y: positions[sid].y };
+      end = { x: positions[eid].x, y: positions[eid].y };
+      const θ = Math.atan2(end.y - start.y, end.x - start.x); // Angle between initial line and bond
+      const s = Math.sin(θ), c = Math.cos(θ);
+      if (pos !== 0) {
+        const SBL = re.skeletal ? re.bondLength * (1 - re.smallBondLengthFrac) / 2 : 0; // Length to subtract from each end
+        if (pos === 1) {
+          start = { x: start.x + re.bondGap*s + SBL*c, y: start.y - re.bondGap*c + SBL*s };
+          end = { x: end.x + re.bondGap*s - SBL*c, y: end.y - re.bondGap*c - SBL*s };
+        } else {
+          start = { x: start.x - re.bondGap*s + SBL*c, y: start.y + re.bondGap*c + SBL*s };
+          end = { x: end.x - re.bondGap*s - SBL*c, y: end.y + re.bondGap*c - SBL*s };
+        }
+      }
+      let grad = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
+      grad.addColorStop(GSTART, c1);
+      grad.addColorStop(GSTOP, c2);
+      ctx.strokeStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.stroke();
+    };
     for (const id in positions) {
       if (positions[id] && !isNaN(positions[id].x) && !isNaN(positions[id].y)) {
         const c1 = this.groups[id].getRenderColor(re);
         for (const bond of this.groups[id].bonds) {
           if (positions[bond.dest] && !isNaN(positions[bond.dest].x) && !isNaN(positions[bond.dest].y)) {
             const c2 = this.groups[bond.dest].getRenderColor(re);
+            let inRing = ringMember.has(+id) && ringMember.has(bond.dest);
 
-            if (bond.bond === "-" || bond.bond === "#" || bond.bond === ":") {
-              let grad = ctx.createLinearGradient(positions[id].x, positions[id].y, positions[bond.dest].x, positions[bond.dest].y);
-              grad.addColorStop(GSTART, c1);
-              grad.addColorStop(GSTOP, c2);
-              ctx.strokeStyle = grad;
-              ctx.beginPath();
-              ctx.moveTo(positions[id].x, positions[id].y);
-              ctx.lineTo(positions[bond.dest].x, positions[bond.dest].y);
-              ctx.stroke();
+            if (bond.bond === "-" || bond.bond === "#" || bond.bond === ":" || (re.skeletal && bond.bond === "=")) {
+              drawBondLine(+id, bond.dest, 0, c1, c2);
             }
-            if (bond.bond === "=" || bond.bond === "#") {
-              let θ = Math.atan2(positions[bond.dest].y - positions[id].y, positions[bond.dest].x - positions[id].x);
-              let x = re.bondGap * Math.sin(θ), y = re.bondGap * Math.cos(θ);
-              let grad = ctx.createLinearGradient(positions[id].x - x, positions[id].y - y, positions[bond.dest].x - x, positions[bond.dest].y - y);
-              grad.addColorStop(GSTART, c1);
-              grad.addColorStop(GSTOP, c2);
-              ctx.strokeStyle = grad;
-              ctx.beginPath();
-              ctx.moveTo(positions[id].x - x, positions[id].y - y);
-              ctx.lineTo(positions[bond.dest].x - x, positions[bond.dest].y - y);
-              ctx.stroke();
-
-              grad = ctx.createLinearGradient(positions[id].x + x, positions[id].y + y, positions[bond.dest].x + x, positions[bond.dest].y + y);
-              grad.addColorStop(GSTART, c1);
-              grad.addColorStop(GSTOP, c2);
-              ctx.strokeStyle = grad;
-              ctx.beginPath();
-              ctx.moveTo(positions[id].x + x, positions[id].y + y);
-              ctx.lineTo(positions[bond.dest].x + x, positions[bond.dest].y + y);
-              ctx.stroke();
-            }
+            // double bond: inRing ? inner : outer
+            if ((bond.bond === "=" && !re.skeletal) || bond.bond === "#") drawBondLine(+id, bond.dest, inRing ? -1 : 1, c1, c2);
+            if (bond.bond === "=" || bond.bond === "#") drawBondLine(+id, bond.dest, inRing ? 1 : -1, c1, c2);
           }
         }
       }
