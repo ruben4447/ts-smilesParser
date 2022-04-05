@@ -164,7 +164,7 @@ export class SMILES {
       //#endregion
 
       //#region Reaction
-      if (smiles[pos] === ">" && chainDepth === 0 && groups.length > 0 && (ps.parseOptions.enableMultipleReactions ? true : ps.reactionIndexes.length < 2) && ps.parseOptions.enableReaction) {
+      if (smiles[pos] === ">" && chainDepth === 0 && groups.length > 0 && ps.parseOptions.enableSeperatedStructures && ps.parseOptions.enableReaction && (ps.parseOptions.enableMultipleReactions ? true : ps.reactionIndexes.length < 2)) {
         let ptr = ps.molecules.length - 1;
         dontBondNext = true;
         if (Object.keys(ps.molecules[ptr].groups).length > 0) {

@@ -201,8 +201,8 @@ export class Group {
   }
 
   /** To fancy string e.g. "[NH4+]" -> (NH<sub>4</sub>)<sup>+</sup> */
-  public toStringFancy(html = false): string {
-    let string = this.getElementString(true, true);
+  public toStringFancy(html = false, doLowercase = true): string {
+    let string = this.getElementString(doLowercase, true);
     if (this.elements.size > 1) string = "(" + string + ")";
     if (this.charge !== 0) {
       const charge = chargeToString(this.charge);

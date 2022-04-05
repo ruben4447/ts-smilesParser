@@ -1,5 +1,5 @@
 # General
-- Skeletal rendering issue: `C(O)CC`, `C(C)I`
+- Skeletal rendering issue: `C(O)CC`, `C(C)I`, `c%1(c(c(c(c(c%1CN)CN)CN)CN)CN)CN`
 - Decarbonylation reactions -> https://en.wikipedia.org/wiki/Decarbonylation
 
 # Rings

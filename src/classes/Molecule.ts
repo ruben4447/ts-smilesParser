@@ -188,10 +188,84 @@ export class Molecule {
       let match = this.groups[gid].matchAtoms(thing, this, rec, true);
       if (match) {
         matches.push(rec);
-        if (!matchMany) return matches;
+        if (!matchMany) break;
       }
     }
     return matches;
+  }
+
+  /**
+   * Test for benzene, with one substitued carbon.
+   * 
+   * Default, substitutuent is just Hydrogen.
+   * 
+   * Returned map: IDs 0-5 are used for ring carbons. map[0] is carbon that substituent is bonded to.
+   */
+  public matchBenzene(substitute?: IMatchAtom, matchMany = true): IGroupStrMap[] {
+    if (substitute === undefined) substitute = { atom: "H" };
+    const matches: IGroupStrMap[] = [];
+    for (let ring of this.rings) {
+      if (!ring.isAromatic || ring.members.length !== 6) continue;
+      let cs = 0, hs = 0, si = -1, sr: IGroupStrMap = {}; // Carbons, index of substituent
+      for (let i = 0; i < ring.members.length; ++i) {
+        if (this.groups[ring.members[i]].isElement("C")) {
+          cs++;
+          let to = this.getAllBonds(ring.members[i]).find(b => ring.members.indexOf(b.dest) === -1);
+          if (!to) {}
+          else if (si === -1 && this.groups[to.dest].matchAtoms(substitute, this, sr, true)) si = i;
+          else if (this.groups[to.dest].isElement("H")) hs++;
+        }
+      }
+      if (cs === 6 && hs === 5 && si !== -1) {
+        const map: IGroupStrMap = {};
+        for (let j = 0, k = 0, met = false; j < ring.members.length;) {
+          if (k in map) { }
+          else if (met) {
+            map[k] = this.groups[ring.members[j]];
+            k++;
+            if (k >= ring.members.length) break;
+          } else if (j === si) {
+            met = true;
+            continue;
+          }
+          j = (j + 1) % ring.members.length;
+        }
+        for (let x in sr) map[x] = sr[x];
+        matches.push(map);
+        if (!matchMany) break;
+      }
+    }
+    return matches;
+  }
+
+  /** Make ring aromatic */
+  public aromaticifyRing(ringId: number, lowercase = true) {
+    let ring = this.rings.find(ring => ring.ID === ringId);
+    ring.isAromatic = true;
+    for (let i = 0; i < ring.members.length; ++i) {
+      let bond = this.getBond(ring.members[i], ring.members[(i + 1) % ring.members.length]);
+      bond.bond = ":";
+      if (lowercase) this.groups[ring.members[i]].isLowercase = true;
+      if (this.groups[ring.members[i]].bonds.length >= 4) {
+        let j = this.groups[ring.members[i]].bonds.findIndex(bond => this.groups[bond.dest].isElement("H"));
+        if (j !== -1) this.groups[ring.members[i]].bonds.splice(j, 1);
+      }
+    }
+  }
+
+  /** Reduce aromatic ring */
+  public deAromaticifyRing(ringId: number, implicitHs = true) {
+    let ring = this.rings.find(ring => ring.ID === ringId);
+    ring.isAromatic = false;
+    for (let i = 0; i < ring.members.length; ++i) {
+      let bond = this.getBond(ring.members[i], ring.members[(i + 1) % ring.members.length]);
+      bond.bond = "-";
+      this.groups[ring.members[i]].isLowercase = false;
+      let H = new Group(["H"]);
+      H.isImplicit = implicitHs;
+      this.groups[H.ID] = H;
+      this.groups[ring.members[i]].addBond("-", H);
+    }
   }
 
   /**
@@ -353,12 +427,12 @@ export class Molecule {
         stack.splice(i, 1);
       } else {
         let groupElements = new Map<string, number>();
-        groupElements.set(group.toStringFancy(html), 1);
+        groupElements.set(group.toStringFancy(html, false), 1);
         const bonds = this.getAllBonds(group.ID);
         for (let j = bonds.length - 1; j >= 0; j--) {
           const bond = bonds[j];
           if (!doneGroups.has(bond.dest) && this.groups[bond.dest].bonds.length === 0) {
-            let el = this.groups[bond.dest].toStringFancy(html);
+            let el = this.groups[bond.dest].toStringFancy(html, false);
             groupElements.set(el, (groupElements.get(el) ?? 0) + 1);
             doneGroups.add(bond.dest);
           }
