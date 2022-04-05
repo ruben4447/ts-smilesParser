@@ -1,5 +1,6 @@
 import { lowercaseRingAtoms, masses, organicSubset, symbols } from "../data-vars";
 import { BondType } from "../types/Bonds";
+import { IPositionData } from "../types/Group";
 import { createParseOptionsObject, createRenderOptsObject, IParseOptions, IRenderOptions, IRingMap } from "../types/SMILES";
 import { IRec } from "../types/utils";
 import { arrFromBack, extractBetweenMatching, extractDuplicates, extractElement, getTextMetrics, isBondChar, parseChargeString, parseDigitString, parseInorganicString, _chargeRegex1, _chargeRegex2, _regexNum } from "../utils";
@@ -462,7 +463,7 @@ export class ParsedSMILES {
     return smiles;
   }
 
-  /** Render to a canvas */
+  /** Render to an offscreen canvas */
   public render(renderOptionsOverride?: { [opt: string]: boolean }) {
     const renderOptions = { ...this.renderOptions };
     if (renderOptionsOverride) {
@@ -471,41 +472,34 @@ export class ParsedSMILES {
       }
     }
 
-    const images: ImageData[] = [];
-    const oc = new OffscreenCanvas(1000, 1000), occtx = oc.getContext("2d");
-    for (const mol of this.molecules) {
-      occtx.clearRect(0, 0, oc.width, oc.height);
-      const image = mol.render(occtx, renderOptions);
-      images.push(image);
-    }
-
-    occtx.fillStyle = renderOptions.bg;
-    occtx.fillRect(0, 0, oc.width, oc.height);
-
+    // Calculate positions of each molecule
+    const molPosData = this.molecules.map(mol => mol.getPositionData(renderOptions));
+    // Canvas for measuring text
+    let textCanvas = new OffscreenCanvas(200, 40), tcctx = textCanvas.getContext("2d");
     // Record positions of every image/text piece
     let P = 3, x = P, y = P, w = x, h = y, minH = h, minW = w;
     const molPosHistory: { x: number, y: number, minW: number, minH: number }[] = []; // Position of molecules
     const txtPosHistory: { text: string, x: number, y: number, w: number, h: number }[] = [];
     const isReaction = this.reactionIndexes.some(n => n !== -1);
-    for (let i = 0; i < images.length; ++i) {
-      const image = images[i];
+    for (let i = 0; i < molPosData.length; ++i) {
+      const data = molPosData[i];
       // Width/height of final image
-      if (image.height > h - minH) h = minH + image.height;
-      if (image.width > w - minW) w = minW + image.width;
+      if (data.dim.y > h - minH) h = minH + data.dim.y;
+      if (data.dim.x > w - minW) w = minW + data.dim.x;
       if (w > minW) minW = w;
       // Add record
       molPosHistory.push({ x, y: NaN, minW, minH });
-      x += image.width;
+      x += data.dim.x;
 
       if (isReaction && this.molecules[i + 1]) {
         const eq = !this.reactionIndexes.some(n => n === i); // Are molecules the same type?
         const text = eq ? "+" : "→";
         const osize = renderOptions.font.size;
-        occtx.font = renderOptions.font.set("size", 25).toString();
-        occtx.fillStyle = renderOptions.defaultAtomColor;
-        let { width, height } = getTextMetrics(occtx, text);
+        tcctx.font = renderOptions.font.set("size", 25).toString();
+        tcctx.fillStyle = renderOptions.defaultAtomColor;
+        let { width, height } = getTextMetrics(tcctx, text);
         txtPosHistory.push({ text, x: x + P, y: NaN, w: width, h: height });
-        occtx.font = renderOptions.font.set("size", osize).toString();
+        tcctx.font = renderOptions.font.set("size", osize).toString();
         width += 2 * P;
         x += width;
         if (x > w) w = x;
@@ -514,7 +508,7 @@ export class ParsedSMILES {
           for (let j = txtPosHistory.length - 1; j >= 0 && isNaN(txtPosHistory[j].y); j--)
             txtPosHistory[j].y = y + (h - minH) / 2;
           for (let j = molPosHistory.length - 1; j >= 0 && isNaN(molPosHistory[j].y); j--)
-            molPosHistory[j].y = y + (h - minH) / 2 - images[j].height / 2;
+            molPosHistory[j].y = y + (h - minH) / 2 - molPosData[j].dim.y / 2;
           if (renderOptions.reactionSplitLine) {
             x = P;
             y = h + 2 * P;
@@ -530,7 +524,20 @@ export class ParsedSMILES {
     for (let j = txtPosHistory.length - 1; j >= 0 && isNaN(txtPosHistory[j].y); j--)
       txtPosHistory[j].y = y + (h - minH) / 2;
     for (let j = molPosHistory.length - 1; j >= 0 && isNaN(molPosHistory[j].y); j--)
-      molPosHistory[j].y = y + (h - minH) / 2 - images[j].height / 2;
+      molPosHistory[j].y = y + (h - minH) / 2 - molPosData[j].dim.y / 2;
+
+    // Create canvas
+    const oc = new OffscreenCanvas(w + P, h), occtx = oc.getContext("2d");
+    // Render molecular data to images
+    const images: ImageData[] = [];
+    for (let i = 0; i < this.molecules.length; ++i) {
+      occtx.clearRect(0, 0, oc.width, oc.height);
+      const image = this.molecules[i].render(occtx, renderOptions, molPosData[i]);
+      images.push(image);
+    }
+
+    occtx.fillStyle = renderOptions.bg;
+    occtx.fillRect(0, 0, oc.width, oc.height);
 
     // Render molecule images
     for (let i = 0; i < molPosHistory.length; i++) {
@@ -575,7 +582,8 @@ export class ParsedSMILES {
       }
     }
 
-    const image = occtx.getImageData(0, 0, w + P, h);
-    return image;
+    return oc;
+    // const image = occtx.getImageData(0, 0, w + P, h);
+    // return image;
   }
 }

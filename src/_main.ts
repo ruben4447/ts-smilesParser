@@ -23,6 +23,7 @@ function _main() {
   env.parseOptions.checkBondCount = true;
   env.renderOptions.skeletal = true;
   env.renderOptions.renderImplicit = true;
+  env.renderOptions.bondLength = 150;
   env.renderOptions.collapseH = true;
 
   const tabContainer = document.createElement('div');
@@ -37,12 +38,11 @@ function _main() {
 
   // parseSmiles("N{-}(C)(CC1CCC1)");
   // parseSmiles("CS(=O)(=O)O.F>>C(F)(F)(F)S(=O)(=O)O.[H2]");
-  // parseSmiles("C=C>[H2].[Ni]>CC");
   // parseSmiles("C.ClCl>>CCl.ClCCl.C(Cl)(Cl)Cl.ClC(Cl)(Cl)Cl.[H]Cl");
   // parseSmiles("C1=CC=C(C(=C1)CC(=O)O)NC2=C(C=CC=C2Cl)Cl");
   // parseSmiles("C=COC1=COC=C1");
   // parseSmiles("C=CC=C>[O2].[CuCl2]>O1C=CC=C1");
-  parseSmiles("c1ccccc1");
+  parseSmiles("CCCO");
   // parseSmiles("ClCl>>[Cl.].[Cl.]");
   // parseSmiles("CC1:C(:C:C(:C:C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
   // parseSmiles("Cc1c(cc(cc1[NO2])[NO2])[NO2]");
@@ -316,7 +316,7 @@ function _error(e: Error) {
 function parseSmiles(smiles?: string, flag: 0 | 1 | 2 = 1) {
   const ctx = $globals.canvas.getContext("2d");
   elOutput.innerHTML = '';
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, $globals.canvas.width, $globals.canvas.height);
   if (smiles !== undefined) inputSMILES.value = smiles;
   if (flag === 0) return;
   
@@ -329,7 +329,7 @@ function parseSmiles(smiles?: string, flag: 0 | 1 | 2 = 1) {
     } catch (e) {
       elOutput.innerText = `Error!`;
       _error(e);
-      $globals.error = e;
+      $globals.error = e;;
       parseTime = -1;
       return;
     }
@@ -340,13 +340,14 @@ function parseSmiles(smiles?: string, flag: 0 | 1 | 2 = 1) {
   }
 
   let renderTime = performance.now();
-  const image = ps.render();
+  const oc = ps.render();
   renderTime = performance.now() - renderTime;
 
   // Get distance from (0,0) such that the molecule is centred
-  let θ = Math.atan2(canvas.width - image.width, canvas.height - image.height);
-  let h = 0.5 * Math.hypot(canvas.height - image.height, canvas.width - image.width);
-  ctx.putImageData(image, h * Math.sin(θ), 0);
+  let iw = Math.min(oc.width, $globals.canvas.width), ih = Math.min(oc.height, $globals.canvas.height);
+  let θ = Math.atan2($globals.canvas.width - iw, $globals.canvas.height - ih);
+  let h = 0.5 * Math.hypot($globals.canvas.height - ih, canvas.width - iw);
+  ctx.drawImage(oc, h * Math.sin(θ), 0, iw, ih);
 
   // SMILES
   elOutput.innerHTML += `<b>SMILES</b>: ${ps.generateSMILES()} | <em>${utils.numstr(parseTime)}/${utils.numstr(renderTime)}</em> ms p/r | Created ${utils.numstr(ps.molecules.length)} molecule${ps.molecules.length === 1 ? '' : 's'}`;

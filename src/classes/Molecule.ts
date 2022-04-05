@@ -1,6 +1,6 @@
 import { organicSubset } from "../data-vars";
 import { IBond } from "../types/Bonds";
-import { IGroupStrMap, IMatchAtom } from "../types/Group";
+import { IGroupStrMap, IMatchAtom, IPositionData } from "../types/Group";
 import { createGenerateSmilesStackItemObject, IAtomCount, ICountAtoms, IElementToIonMap, IGenerateSmilesStackItem, createRenderOptsObject, defaultRenderOptsObject, IRenderOptions } from "../types/SMILES";
 import { IRec, IVec } from "../types/utils";
 import { assembleEmpiricalFormula, assembleMolecularFormula, extractElement, extractInteger, getBondNumber, numstr, rotateCoords, _regexNum } from "../utils";
@@ -580,8 +580,8 @@ export class Molecule {
   }
 
   /** Return position vectors of each Group around (0,0) */
-  public getGroupPositions(ctx: OffscreenCanvasRenderingContext2D, re?: IRenderOptions) {
-    if (Object.keys(this.groups).length === 0) return {};
+  public getPositionData(re?: IRenderOptions): IPositionData {
+    if (Object.keys(this.groups).length === 0) return { groups: {}, rings: new Map(), angles: new Map(), dim: { x: 0, y: 0} };
     if (re === undefined) re = defaultRenderOptsObject;
 
     const collision = (rec: IRec) => Object.values(posData).find(rec2 => rec.x - rec.w/2 - re.atomOverlapPadding <= rec2.x + rec2.w/2 + re.atomOverlapPadding && rec.x + rec.w/2 + re.atomOverlapPadding >= rec2.x - rec2.w/2 - re.atomOverlapPadding && rec.y - rec.h/2 - re.atomOverlapPadding <= rec2.y + rec2.h/2 + re.atomOverlapPadding && rec.y + rec.h/2 + re.atomOverlapPadding >= rec2.y - rec2.h/2 - re.atomOverlapPadding) ?? false;
@@ -599,7 +599,7 @@ export class Molecule {
     // For each group, populate text width/height
     for (let id in this.groups) {
       angles.set(+id, [0, 2*Math.PI, false]);
-      let { width: w, height: h } = re.skeletal && this.groups[id].isElement("C") ? { width: 0, height: 0 } : this.groups[id].getRenderAsTextDimensions(ctx, re, re.renderImplicit && re.collapseH ? this.getAllBonds(+id).filter(bond => this.groups[bond.dest].isImplicit && this.groups[bond.dest].isElement("H")).length : 0);
+      let { width: w, height: h } = re.skeletal && this.groups[id].isElement("C") ? { width: 0, height: 0 } : this.groups[id].getRenderAsTextDimensions(re, re.renderImplicit && re.collapseH ? this.getAllBonds(+id).filter(bond => this.groups[bond.dest].isImplicit && this.groups[bond.dest].isElement("H")).length : 0);
       posData[id] = { x: NaN, y: NaN, w, h };
     }
 
@@ -691,26 +691,16 @@ export class Molecule {
         iters++;
       }
     }
-    return { pos: posData, rings, angles };
-  }
 
-  /** Return image of rendered molecule */
-  public render(ctx: OffscreenCanvasRenderingContext2D, re?: IRenderOptions): ImageData {
-    if (Object.values(this.groups).length === 0) return ctx.createImageData(1, 1); // "Empty" image
-    if (re === undefined) re = createRenderOptsObject();
-
-    const ringMember = new Set<number>(); // Set of all group IDs which is a member of a ring
-    Object.values(this.rings).forEach(ring => ring.members.forEach(mid => ringMember.add(mid)));
-
-    const { pos: positions, rings, angles } = this.getGroupPositions(ctx, re), rects = Object.values(positions);
+    // Find max/min coordinates
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const rec of rects) {
-      if (rec.x - rec.w / 2 < minX) minX = rec.x - rec.w / 2;
-      if (rec.x + rec.w / 2 > maxX) maxX = rec.x + rec.w / 2;
-      if (rec.y - rec.h / 2 < minY) minY = rec.y - rec.h / 2;
-      if (rec.y + rec.h / 2 > maxY) maxY = rec.y + rec.h / 2;
+    for (let id in posData) {
+      if (posData[id].x - posData[id].w / 2 < minX) minX = posData[id].x - posData[id].w / 2;
+      if (posData[id].x + posData[id].w / 2 > maxX) maxX = posData[id].x + posData[id].w / 2;
+      if (posData[id].y - posData[id].h / 2 < minY) minY = posData[id].y - posData[id].h / 2;
+      if (posData[id].y + posData[id].h / 2 > maxY) maxY = posData[id].y + posData[id].h / 2;
     }
-    rings.forEach((obj, id) => {
+    rings.forEach(obj => {
       if (obj.minX < minX) minX = obj.minX;
       if (obj.maxX > maxX) maxX = obj.maxX;
       if (obj.minY < minY) minY = obj.minY;
@@ -723,9 +713,9 @@ export class Molecule {
 
     // Make sure no coordinate is negative!
     let dx = Math.abs(minX), dy = Math.abs(minY);
-    for (const rec of rects) {
-      rec.x += dx;
-      rec.y += dy;
+    for (let id in posData) {
+      posData[id].x += dx;
+      posData[id].y += dy;
     }
     rings.forEach(obj => {
       obj.minX += dx;
@@ -734,9 +724,22 @@ export class Molecule {
       obj.maxY += dy;
     });
 
+    return { groups: posData, rings, angles, dim: { x: maxX - minX, y: maxY - minY } };
+  }
+
+  /** Return image of rendered molecule. If arg is of type IPositionData, use this instead of generating a new one */
+  public render(ctx: OffscreenCanvasRenderingContext2D, re?: IRenderOptions, pd?: IPositionData): ImageData {
+    if (Object.values(this.groups).length === 0) return ctx.createImageData(1, 1); // "Empty" image
+
+    const ringMember = new Set<number>(); // Set of all group IDs which is a member of a ring
+    Object.values(this.rings).forEach(ring => ring.members.forEach(mid => ringMember.add(mid)));
+
+    if (re === undefined) re = createRenderOptsObject();
+    if (pd === undefined) pd = this.getPositionData(re);
+
     // Fill background
     ctx.fillStyle = re.bg;
-    ctx.fillRect(0, 0, maxX - minX, maxY - minY);
+    ctx.fillRect(0, 0, pd.dim.x, pd.dim.y);
 
     // Bonds
     ctx.strokeStyle = re.defaultAtomColor;
@@ -745,8 +748,8 @@ export class Molecule {
     const GSTART = 0.35, GSTOP = 0.65;
     const drawBondLine = (sid: number, eid: number, pos: -1 | 0 | 1, c1: string, c2: string) => {
       let start: IVec, end: IVec;
-      start = { x: positions[sid].x, y: positions[sid].y };
-      end = { x: positions[eid].x, y: positions[eid].y };
+      start = { x: pd.groups[sid].x, y: pd.groups[sid].y };
+      end = { x: pd.groups[eid].x, y: pd.groups[eid].y };
       const θ = Math.atan2(end.y - start.y, end.x - start.x); // Angle between initial line and bond
       const s = Math.sin(θ), c = Math.cos(θ);
       if (pos !== 0) {
@@ -768,11 +771,11 @@ export class Molecule {
       ctx.lineTo(end.x, end.y);
       ctx.stroke();
     };
-    for (const id in positions) {
-      if (positions[id] && !isNaN(positions[id].x) && !isNaN(positions[id].y)) {
+    for (const id in pd.groups) {
+      if (pd.groups[id] && !isNaN(pd.groups[id].x) && !isNaN(pd.groups[id].y)) {
         const c1 = this.groups[id].getRenderColor(re);
         for (const bond of this.groups[id].bonds) {
-          if (positions[bond.dest] && !isNaN(positions[bond.dest].x) && !isNaN(positions[bond.dest].y)) {
+          if (pd.groups[bond.dest] && !isNaN(pd.groups[bond.dest].x) && !isNaN(pd.groups[bond.dest].y)) {
             const c2 = this.groups[bond.dest].getRenderColor(re);
             let inRing = ringMember.has(+id) && ringMember.has(bond.dest);
 
@@ -788,11 +791,11 @@ export class Molecule {
     }
 
     // Loop through rings
-    rings.forEach((obj, id) => {
+    pd.rings.forEach((obj, id) => {
       const ring = this.rings.find(r => r.ID === id);
       // Calculate inner bounds
-      let dx = Math.max(...ring.members.map(mem => positions[mem].w / 2));
-      let dy = Math.max(...ring.members.map(mem => positions[mem].h / 2));
+      let dx = Math.max(...ring.members.map(mem => pd.groups[mem].w / 2));
+      let dy = Math.max(...ring.members.map(mem => pd.groups[mem].h / 2));
       let minX = obj.minX + dx, maxX = obj.maxX - dx, minY = obj.minY + dy, maxY = obj.maxY - dy;
       const rx = (maxX - minX) / 2, ry = (maxY - minY) / 2, r = Math.min(rx, ry);
       // Aromatic?
@@ -823,8 +826,8 @@ export class Molecule {
     });
 
     // Render groups
-    for (const id in positions) {
-      let rec = positions[id], group = this.groups[id], P = 4, extraHs = 0;
+    for (const id in pd.groups) {
+      let rec = pd.groups[id], group = this.groups[id], P = 4, extraHs = 0;
       if (re.renderImplicit && re.collapseH) extraHs = this.getAllBonds(group.ID).filter(bond => (this.groups[bond.dest].isImplicit ? re.renderImplicit : false) && this.groups[bond.dest].isElement("H")).length;
       ctx.fillStyle = re.bg;
       if (re.skeletal && group.isElement("C")) {
@@ -864,9 +867,9 @@ export class Molecule {
     if (re.debugShowAngles) {
       ctx.font = re.debugFont.toString();
       let L = re.bondLength * 0.3, LINES = re.debugAngleLines ?? 5;
-      angles.forEach(([u, v], id) => {
+      pd.angles.forEach(([u, v], id) => {
         if (this.groups[id].isImplicit) return;
-        const { x, y } = positions[id];
+        const { x, y } = pd.groups[id];
         ctx.beginPath();
         ctx.strokeStyle = "blue";
         let [rx, ry] = rotateCoords(L, u);
@@ -894,6 +897,6 @@ export class Molecule {
     }
 
     // Return bounding box
-    return ctx.getImageData(0, 0, maxX - minX, maxY - minY);
+    return ctx.getImageData(0, 0, pd.dim.x, pd.dim.y);
   }
 }

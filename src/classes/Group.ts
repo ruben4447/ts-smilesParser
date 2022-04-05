@@ -250,8 +250,9 @@ export class Group {
   }
 
   /** If rendered as text, what would the dimensions be? */
-  public getRenderAsTextDimensions(ctx: OffscreenCanvasRenderingContext2D, re?: IRenderOptions, extraHs = 0) {
+  public getRenderAsTextDimensions(re?: IRenderOptions, extraHs = 0) {
     if (re === undefined) re = defaultRenderOptsObject;
+    const canv = new OffscreenCanvas(100 * re.font.size, re.font.size * 2), ctx = canv.getContext("2d");
     ctx.font = re.font.toString();
     let elements = new Map(this.elements);
     if (extraHs) elements.set("H", (elements.get("H") ?? 0 + extraHs));
