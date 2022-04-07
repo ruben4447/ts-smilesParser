@@ -23,7 +23,6 @@ function _main() {
   env.parseOptions.checkBondCount = true;
   env.renderOptions.skeletal = true;
   env.renderOptions.renderImplicit = true;
-  env.renderOptions.bondLength = 150;
   env.renderOptions.collapseH = true;
 
   const tabContainer = document.createElement('div');
@@ -42,7 +41,7 @@ function _main() {
   // parseSmiles("C1=CC=C(C(=C1)CC(=O)O)NC2=C(C=CC=C2Cl)Cl");
   // parseSmiles("C=COC1=COC=C1");
   // parseSmiles("C=CC=C>[O2].[CuCl2]>O1C=CC=C1");
-  parseSmiles("CCCO");
+  parseSmiles("COO");
   // parseSmiles("ClCl>>[Cl.].[Cl.]");
   // parseSmiles("CC1:C(:C:C(:C:C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
   // parseSmiles("Cc1c(cc(cc1[NO2])[NO2])[NO2]");
@@ -341,13 +340,18 @@ function parseSmiles(smiles?: string, flag: 0 | 1 | 2 = 1) {
 
   let renderTime = performance.now();
   const oc = ps.render();
-  renderTime = performance.now() - renderTime;
 
   // Get distance from (0,0) such that the molecule is centred
   let iw = Math.min(oc.width, $globals.canvas.width), ih = Math.min(oc.height, $globals.canvas.height);
+  if (false) { // Scale up?
+    let f = Math.max(iw, ih) / Math.max($globals.canvas.width, $globals.canvas.height);
+    iw /= f;
+    ih /= f;
+  }
   let θ = Math.atan2($globals.canvas.width - iw, $globals.canvas.height - ih);
   let h = 0.5 * Math.hypot($globals.canvas.height - ih, canvas.width - iw);
   ctx.drawImage(oc, h * Math.sin(θ), 0, iw, ih);
+  renderTime = performance.now() - renderTime;
 
   // SMILES
   elOutput.innerHTML += `<b>SMILES</b>: ${ps.generateSMILES()} | <em>${utils.numstr(parseTime)}/${utils.numstr(renderTime)}</em> ms p/r | Created ${utils.numstr(ps.molecules.length)} molecule${ps.molecules.length === 1 ? '' : 's'}`;

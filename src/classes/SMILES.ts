@@ -483,7 +483,7 @@ export class ParsedSMILES {
     const isReaction = this.reactionIndexes.some(n => n !== -1);
     for (let i = 0; i < molPosData.length; ++i) {
       const data = molPosData[i];
-      // Width/height of final image
+      // Width/height of final imagenp
       if (data.dim.y > h - minH) h = minH + data.dim.y;
       if (data.dim.x > w - minW) w = minW + data.dim.x;
       if (w > minW) minW = w;

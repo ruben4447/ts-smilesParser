@@ -88,7 +88,7 @@ export const moleculeTypes: { [id: number]: IMoleculeType } = {
     repr: "aldehyde",
     name: "Aldehyde",
     eg: { smiles: "C=O", name: "methanal" },
-    test: mol => mol.matchMolecule({ atom: "C", rec: 1, bondedTo: [{ atom: "O", bond: "=", rec: 2 }, { atom: "H" }] }),
+    test: mol => mol.matchMolecule({ atom: "C", rec: 1, bondedTo: [{ atom: "O", bond: "=", rec: 2 }, { atom: "H", rec: 3 }] }),
   },
   14: {
     repr: "carboxylic-acid",
@@ -215,6 +215,24 @@ export const moleculeTypes: { [id: number]: IMoleculeType } = {
     name: "Aminobenzene",
     eg: { smiles: "c1(N)ccccc1", name: "aminobenzene" },
     test: mol => mol.matchBenzene({ atom: ["N"], rec: 6, bondedTo: [{ atom: "H" }, { atom: "H" }] })    
+  },
+  33: {
+    repr: "hydroperoxide",
+    name: "Hydroperoxide",
+    eg: { smiles: "COO", name: "methylhydroperoxide" },
+    test: mol => mol.matchMolecule({ atom: ["C"], rec: 1, bondedTo: [{ atom: "O", rec: 2, bondedTo: [{ atom: "O", rec: 3, bondedTo: [{ atom: "H", rec: 4 }] }] }] })    
+  },
+  34: {
+    repr: "peroxide",
+    name: "Peroxide",
+    eg: { smiles: "COOC", name: "dimethylperoxide" },
+    test: mol => mol.matchMolecule({ atom: ["C"], rec: 1, bondedTo: [{ atom: "O", rec: 2, bondedTo: [{ atom: "O", rec: 3, bondedTo: [{ atom: "C", rec: 4 }] }] }] })    
+  },
+  40: {
+    repr: "phenol",
+    name: "Phenol",
+    eg: { smiles: "c1(O)ccccc1", name: "phenol" },
+    test: mol => mol.matchBenzene({ atom: ["O"], rec: 6, bondedTo: [{ atom: "H", rec: 7 }] })    
   },
 };
 
@@ -345,6 +363,26 @@ export const reactions: IReactionInfo[] = [
       mol.groups[N.ID] = N;
       // Bond C and N via #
       group[2].addBond("#", N);
+
+      return { ok: true };
+    }
+  },
+  {
+    name: "Hydroxylation",
+    type: "nucleophilic substitution",
+    start: 23,
+    end: 3,
+    reagents: "NaOH",
+    react: (mol, group, opts) => {
+      // Replace X with O
+      group[2].elements.clear();
+      group[2].addElement("O");
+      // Create H
+      const H = new Group(["H"]);
+      H.isImplicit = !opts.addH;
+      mol.groups[H.ID] = H;
+      // Bond O-H
+      group[2].addBond("-", H);
 
       return { ok: true };
     }
@@ -626,6 +664,53 @@ export const reactions: IReactionInfo[] = [
       O.addElement("O");
       mol.groups[O.ID] = O;
       group[1].addBond("=", O);
+
+      return { ok: true };
+    }
+  },
+  {
+    name: "Decarbonylation",
+    start: 13,
+    end: 1,
+    reagents: "RhCl3/diglyme",
+    conditions: "200C",
+    react: (mol, group, opts) => {
+      const carbonBond = mol.getAllBonds(group[1].ID).find(b => mol.groups[b.dest].isElement("C"));
+      if (!carbonBond) return { ok: false, data: "Minimum carbon chain of two required" };
+      // Sever C-H
+      mol.severBond(group[1].ID, group[3].ID);
+      // Sever C=O
+      mol.severBond(group[1].ID, group[2].ID);
+      delete mol.groups[group[2].ID];
+      // Sever C-C
+      mol.severBond(carbonBond.dest, group[1].ID);
+      delete mol.groups[group[1].ID];
+      // Bond C-H
+      mol.groups[carbonBond.dest].addBond("-", group[3]);
+      group[3].isImplicit = !opts.addH;
+
+      return { ok: true };
+    }
+  },
+  {
+    name: "Decarbonylation",
+    start: 12,
+    end: 1,
+    reagents: "RhCl3/diglyme",
+    conditions: "200C",
+    react: (mol, group, opts) => {
+      const carbonBonds = mol.getAllBonds(group[1].ID).filter(b => mol.groups[b.dest].isElement("C"));
+      if (carbonBonds.length === 0) return { ok: false, data: "Requires R-CC(=O)C-R'" };
+      // Sever C=O
+      mol.severBond(group[1].ID, group[2].ID);
+      delete mol.groups[group[2].ID];
+      // Sever C-C bonds
+      mol.severBond(group[1].ID, carbonBonds[0].dest);
+      mol.severBond(group[1].ID, carbonBonds[1].dest);
+      // Remove ketone C
+      delete mol.groups[group[1].ID];
+      // Bond C-C
+      mol.groups[carbonBonds[0].dest].addBond("-", mol.groups[carbonBonds[1].dest]);
 
       return { ok: true };
     }
