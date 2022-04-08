@@ -278,4 +278,7 @@ export function gcdOfManyNumbers(numbers: number[]): number {
 export const extractDuplicates = <T>(array: T[]): T[] => array.filter(x => array.indexOf(x) !== array.lastIndexOf(x));
 
 /** Polar to cartesian coordinates around (0,0) */
-export const rotateCoords = (r: number, θ: number) => ([ r * Math.cos(θ), r * Math.sin(θ) ]);
+export const rotateCoords = (r: number, θ: number) => ([r * Math.cos(θ), r * Math.sin(θ)]);
+
+/** Generate array of numbers starting at `start` with numbers ranging 0-`len` */
+export const numArrWrap = (len: number, start: number) => Array.from({ length: len - start }, (_, i) => start + i).concat(Array.from({ length: start }, (_, i) => i));

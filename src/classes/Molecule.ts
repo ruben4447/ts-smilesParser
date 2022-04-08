@@ -3,7 +3,7 @@ import { IBond } from "../types/Bonds";
 import { IGroupStrMap, IMatchAtom, IPositionData } from "../types/Group";
 import { createGenerateSmilesStackItemObject, IAtomCount, ICountAtoms, IElementToIonMap, IGenerateSmilesStackItem, createRenderOptsObject, defaultRenderOptsObject, IRenderOptions } from "../types/SMILES";
 import { IRec, IVec } from "../types/utils";
-import { assembleEmpiricalFormula, assembleMolecularFormula, extractElement, extractInteger, getBondNumber, numstr, rotateCoords, _regexNum } from "../utils";
+import { assembleEmpiricalFormula, assembleMolecularFormula, extractElement, extractInteger, getBondNumber, numArrWrap, numstr, rotateCoords, _regexNum } from "../utils";
 import { AdvError } from "./Error";
 import { Group } from "./Group";
 import { Ring } from "./Rings";
@@ -211,7 +211,7 @@ export class Molecule {
         if (this.groups[ring.members[i]].isElement("C")) {
           cs++;
           let to = this.getAllBonds(ring.members[i]).find(b => ring.members.indexOf(b.dest) === -1);
-          if (!to) {}
+          if (!to) { }
           else if (si === -1 && this.groups[to.dest].matchAtoms(substitute, this, sr, true)) si = i;
           else if (this.groups[to.dest].isElement("H")) hs++;
         }
@@ -233,6 +233,42 @@ export class Molecule {
         for (let x in sr) map[x] = sr[x];
         matches.push(map);
         if (!matchMany) break;
+      }
+    }
+    return matches;
+  }
+
+  /**
+   * Scan for ring structures with the given members. ringMembers[0] is bonded to ringMembers[-1]
+   * 
+   * - For property `ringMembers[k].bondedTo`, ring members are **excluded**
+   * - For property `ringMembers[k].bond`, this indicates how member `k-1` is bonded to member `k`
+   * 
+   * On record, add property `_ringID`
+   */
+  public matchRing(ringMembers: IMatchAtom[], aromatic: boolean, matchMany = true) {
+    const matches: IGroupStrMap[] = [];
+    for (let ring of this.rings) {
+      if (ring.members.length === ringMembers.length && ring.isAromatic === aromatic) {
+        let rec: IGroupStrMap, match: boolean;
+        for (let i = 0; i < ringMembers.length; ++i) {
+          match = true;
+          rec = {};
+          const indexes = numArrWrap(ring.members.length, i);
+          for (let j = 0; match && j < indexes.length; j++) {
+            if (ringMembers[indexes[j]].bond !== undefined) {
+              let bond = this.getBond(ring.members[indexes[j === 0 ? indexes.length - 1 : j - 1]], ring.members[indexes[j]]);
+              if (!bond || bond.bond !== ringMembers[indexes[j]].bond) match = false;
+            }
+            if (match) match = this.groups[ring.members[indexes[j]]].matchAtoms(ringMembers[j], this, rec, true);
+          }
+          if (match) break;
+        }
+        if (match) {
+          rec._ringID = ring.ID;
+          matches.push(rec);
+          if (!matchMany) break;
+        }
       }
     }
     return matches;
@@ -550,7 +586,7 @@ export class Molecule {
     while (currGroups.length > 0) {
       const gid = currGroups[currGroups.length - 1];
       if (gid === endID) { // At end?
-        paths.push([ ...current ]);
+        paths.push([...current]);
         current.pop();
         currGroups.pop();
       } else {
@@ -581,10 +617,10 @@ export class Molecule {
 
   /** Return position vectors of each Group around (0,0) */
   public getPositionData(re?: IRenderOptions): IPositionData {
-    if (Object.keys(this.groups).length === 0) return { groups: {}, rings: new Map(), angles: new Map(), dim: { x: 0, y: 0} };
+    if (Object.keys(this.groups).length === 0) return { groups: {}, rings: new Map(), angles: new Map(), dim: { x: 0, y: 0 } };
     if (re === undefined) re = defaultRenderOptsObject;
 
-    const collision = (rec: IRec) => Object.values(posData).find(rec2 => rec.x - rec.w/2 - re.atomOverlapPadding <= rec2.x + rec2.w/2 + re.atomOverlapPadding && rec.x + rec.w/2 + re.atomOverlapPadding >= rec2.x - rec2.w/2 - re.atomOverlapPadding && rec.y - rec.h/2 - re.atomOverlapPadding <= rec2.y + rec2.h/2 + re.atomOverlapPadding && rec.y + rec.h/2 + re.atomOverlapPadding >= rec2.y - rec2.h/2 - re.atomOverlapPadding) ?? false;
+    const collision = (rec: IRec) => Object.values(posData).find(rec2 => rec.x - rec.w / 2 - re.atomOverlapPadding <= rec2.x + rec2.w / 2 + re.atomOverlapPadding && rec.x + rec.w / 2 + re.atomOverlapPadding >= rec2.x - rec2.w / 2 - re.atomOverlapPadding && rec.y - rec.h / 2 - re.atomOverlapPadding <= rec2.y + rec2.h / 2 + re.atomOverlapPadding && rec.y + rec.h / 2 + re.atomOverlapPadding >= rec2.y - rec2.h / 2 - re.atomOverlapPadding) ?? false;
     const posData: { [gid: number]: IRec } = {};
     const processStack: { id: number, fromId?: number, fromθ: number }[] = []; // Stack of group IDs to process
     const doneGroups = new Set<number>();
@@ -595,10 +631,10 @@ export class Molecule {
     const angles = new Map<number, [number, number, boolean]>(); // Group IDs to angle [start, end, exclusive]
     const skeletalAngleMul = new Map<number, number>();
     let iters = 0;
-    
+
     // For each group, populate text width/height
     for (let id in this.groups) {
-      angles.set(+id, [0, 2*Math.PI, false]);
+      angles.set(+id, [0, 2 * Math.PI, false]);
       let { width: w, height: h } = re.skeletal && this.groups[id].isElement("C") ? { width: 0, height: 0 } : this.groups[id].getRenderAsTextDimensions(re, re.renderImplicit && re.collapseH ? this.getAllBonds(+id).filter(bond => this.groups[bond.dest].isImplicit && this.groups[bond.dest].isElement("H")).length : 0);
       posData[id] = { x: NaN, y: NaN, w, h };
     }
@@ -619,10 +655,10 @@ export class Molecule {
         const ring = this.rings.find(ring => ring.members.some(mid => mid === id));
         if (ring) {
           if (!rings.has(ring.ID)) {
-            let interior = 2*Math.PI / ring.members.length; // Interior angle
-            if ((fromθ < 1.5 * Math.PI && fromθ > 0.5 * Math.PI) || (fromθ > -0.5 * Math.PI && fromθ < -1.5*Math.PI)) interior -= Math.PI;
-            const rot = Math.PI/2 - interior/2;
-            const ext = Math.PI - 2*rot;
+            let interior = 2 * Math.PI / ring.members.length; // Interior angle
+            if ((fromθ < 1.5 * Math.PI && fromθ > 0.5 * Math.PI) || (fromθ > -0.5 * Math.PI && fromθ < -1.5 * Math.PI)) interior -= Math.PI;
+            const rot = Math.PI / 2 - interior / 2;
+            const ext = Math.PI - 2 * rot;
             let angle = angles.get(id)[0] + fromθ + rot;
             let x = rec.x, y = rec.y, minX = x, maxX = x, minY = y, maxY = y;
             const bondLength = Math.max(...ring.members.map((m, i) => re.bondLength + (posData[m].w + posData[ring.members[(i + 1) % ring.members.length]].w) / 2.5));
@@ -638,7 +674,7 @@ export class Molecule {
               if (y < minY) minY = y;
               x += dx;
               y += dy;
-              angles.set(ring.members[k], re.ringRestrictAngleSmall ? [angle + Math.PI, angle + ext, true] : [angle, angle + 2*(Math.PI - ext), true]);
+              angles.set(ring.members[k], re.ringRestrictAngleSmall ? [angle + Math.PI, angle + ext, true] : [angle, angle + 2 * (Math.PI - ext), true]);
               angle -= ext;
             }
             rings.set(ring.ID, { minX, maxX, minY, maxY });
@@ -651,8 +687,8 @@ export class Molecule {
         else if (re.collapseH) bondsTE = bondsTE.filter(bond => !(this.groups[bond.dest].isImplicit && this.groups[bond.dest].isElement("H")));
         let bondsTR = bondsTE.filter(bond => !positionedInRing.has(bond.dest)); // Bonds to render
 
-        let [θu, θv, θexcl ] = angles.get(id); // Start/end angle
-        const sθ = re.skeletal && !ringMember.has(id) && ((skeletalAngleMul.get(id)*re.skeletalAngle)/fromθ === -1 || bondsTE.some(bond => this.groups[bond.dest].isElement("C") && !ringMember.has(bond.dest))) ? skeletalAngleMul.get(id) * re.skeletalAngle : 0; // Skeletal angle adjustment
+        let [θu, θv, θexcl] = angles.get(id); // Start/end angle
+        const sθ = re.skeletal && !ringMember.has(id) && ((skeletalAngleMul.get(id) * re.skeletalAngle) / fromθ === -1 || bondsTE.some(bond => this.groups[bond.dest].isElement("C") && !ringMember.has(bond.dest))) ? skeletalAngleMul.get(id) * re.skeletalAngle : 0; // Skeletal angle adjustment
         let df = iters === 0 || bondsTR.length === 1 ? bondsTR.length : bondsTR.length - 1;
         if (θexcl) df++;
         let θi = (θv - θu) / df; // angle increment
@@ -682,7 +718,7 @@ export class Molecule {
               posData[did].x = rec.x + x;
               posData[did].y = rec.y + y;
             }
-            processStack.push({ id: did, fromId: id, fromθ: θc % (2*Math.PI) });
+            processStack.push({ id: did, fromId: id, fromθ: θc % (2 * Math.PI) });
             skeletalAngleMul.set(did, (sθc === 0 ? 1 : -1) * skeletalAngleMul.get(id)); // Alternate
             θ += θi; // Increase angle
           }
@@ -755,11 +791,11 @@ export class Molecule {
       if (pos !== 0) {
         const SBL = re.skeletal ? re.bondLength * (1 - re.smallBondLengthFrac) / 2 : 0; // Length to subtract from each end
         if (pos === 1) {
-          start = { x: start.x + re.bondGap*s + SBL*c, y: start.y - re.bondGap*c + SBL*s };
-          end = { x: end.x + re.bondGap*s - SBL*c, y: end.y - re.bondGap*c - SBL*s };
+          start = { x: start.x + re.bondGap * s + SBL * c, y: start.y - re.bondGap * c + SBL * s };
+          end = { x: end.x + re.bondGap * s - SBL * c, y: end.y - re.bondGap * c - SBL * s };
         } else {
-          start = { x: start.x - re.bondGap*s + SBL*c, y: start.y + re.bondGap*c + SBL*s };
-          end = { x: end.x - re.bondGap*s - SBL*c, y: end.y + re.bondGap*c - SBL*s };
+          start = { x: start.x - re.bondGap * s + SBL * c, y: start.y + re.bondGap * c + SBL * s };
+          end = { x: end.x - re.bondGap * s - SBL * c, y: end.y + re.bondGap * c - SBL * s };
         }
       }
       let grad = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
@@ -816,7 +852,7 @@ export class Molecule {
         // Centre
         ctx.beginPath();
         ctx.fillStyle = "red";
-        ctx.arc(minX + rx, minY + ry, 2, 0, 2*Math.PI);
+        ctx.arc(minX + rx, minY + ry, 2, 0, 2 * Math.PI);
         ctx.fill();
         // ID
         ctx.fillStyle = "mediumblue";
@@ -840,7 +876,7 @@ export class Molecule {
       if (group.isRadical) {
         ctx.beginPath();
         ctx.fillStyle = group.getRenderColor();
-        ctx.arc(rec.x, rec.y - rec.h / 2 + re.radicalRadius, re.radicalRadius, 0, 2*Math.PI);
+        ctx.arc(rec.x, rec.y - rec.h / 2 + re.radicalRadius, re.radicalRadius, 0, 2 * Math.PI);
         ctx.fill();
       }
 
@@ -848,7 +884,7 @@ export class Molecule {
         // Centre
         ctx.beginPath();
         ctx.fillStyle = "red";
-        ctx.arc(rec.x, rec.y, 2, 0, 2*Math.PI);
+        ctx.arc(rec.x, rec.y, 2, 0, 2 * Math.PI);
         ctx.fill();
         // ID
         ctx.fillStyle = "mediumblue";
@@ -889,7 +925,7 @@ export class Molecule {
         for (let i = 0, a = u; i < (LINES + 1); i++, a += ai) {
           ctx.beginPath();
           ctx.moveTo(x, y);
-          ([ rx, ry ] = rotateCoords(L / 3, a));
+          ([rx, ry] = rotateCoords(L / 3, a));
           ctx.lineTo(x + rx, y + ry);
           ctx.stroke();
         }

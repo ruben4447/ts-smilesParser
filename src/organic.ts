@@ -196,43 +196,49 @@ export const moleculeTypes: { [id: number]: IMoleculeType } = {
     repr: "halo-benzene",
     name: "Halobenzene",
     eg: { smiles: "c1cccc(Br)c1", name: "bromobenzene" },
-    test: mol => mol.matchBenzene({ atom: ["F", "Cl", "Br", "I"], rec: 6 })    
+    test: mol => mol.matchBenzene({ atom: ["F", "Cl", "Br", "I"], rec: 6 })
   },
   30: {
     repr: "nitro-benzene",
     name: "Nitrobenzene",
     eg: { smiles: "c1cccc([N+](=O)[O-])c1", name: "nitrobenzene" },
-    test: mol => mol.matchBenzene({ atom: ["N"], charge: 1, rec: 6, bondedTo: [{ atom: ["O"], bond: "=", rec: 7 }, { atom: ["O"], bond: "-", charge: -1, rec: 8 }] })    
+    test: mol => mol.matchBenzene({ atom: ["N"], charge: 1, rec: 6, bondedTo: [{ atom: ["O"], bond: "=", rec: 7 }, { atom: ["O"], bond: "-", charge: -1, rec: 8 }] })
   },
   31: {
     repr: "alkyl-benzene",
     name: "Alkylbenzene",
     eg: { smiles: "c1(C)ccccc1", name: "methylbenzene" },
-    test: mol => mol.matchBenzene({ atom: ["C"], rec: 6 })    
+    test: mol => mol.matchBenzene({ atom: ["C"], rec: 6 })
   },
   32: {
     repr: "amino-benzene",
     name: "Aminobenzene",
     eg: { smiles: "c1(N)ccccc1", name: "aminobenzene" },
-    test: mol => mol.matchBenzene({ atom: ["N"], rec: 6, bondedTo: [{ atom: "H" }, { atom: "H" }] })    
+    test: mol => mol.matchBenzene({ atom: ["N"], rec: 6, bondedTo: [{ atom: "H" }, { atom: "H" }] })
   },
   33: {
     repr: "hydroperoxide",
     name: "Hydroperoxide",
     eg: { smiles: "COO", name: "methylhydroperoxide" },
-    test: mol => mol.matchMolecule({ atom: ["C"], rec: 1, bondedTo: [{ atom: "O", rec: 2, bondedTo: [{ atom: "O", rec: 3, bondedTo: [{ atom: "H", rec: 4 }] }] }] })    
+    test: mol => mol.matchMolecule({ atom: ["C"], rec: 1, bondedTo: [{ atom: "O", rec: 2, bondedTo: [{ atom: "O", rec: 3, bondedTo: [{ atom: "H", rec: 4 }] }] }] })
   },
   34: {
     repr: "peroxide",
     name: "Peroxide",
-    eg: { smiles: "COOC", name: "dimethylperoxide" },
-    test: mol => mol.matchMolecule({ atom: ["C"], rec: 1, bondedTo: [{ atom: "O", rec: 2, bondedTo: [{ atom: "O", rec: 3, bondedTo: [{ atom: "C", rec: 4 }] }] }] })    
+    eg: { smiles: "COC", name: "dimethylperoxide" },
+    test: mol => mol.matchMolecule({ atom: ["C"], rec: 1, bondedTo: [{ atom: "O", rec: 2, bondedTo: [{ atom: "O", rec: 3, bondedTo: [{ atom: "C", rec: 4 }] }] }] })
+  },
+  35: {
+    repr: "epoxide",
+    name: "Expoxide",
+    eg: { smiles: "C1CO1", name: "epoxyethane" },
+    test: mol => mol.matchRing([{ atom: ["C"], rec: 3 }, { atom: ["O"], rec: 1 }, { atom: ["C"], rec: 2 }], false)
   },
   40: {
     repr: "phenol",
     name: "Phenol",
     eg: { smiles: "c1(O)ccccc1", name: "phenol" },
-    test: mol => mol.matchBenzene({ atom: ["O"], rec: 6, bondedTo: [{ atom: "H", rec: 7 }] })    
+    test: mol => mol.matchRing([{ atom: "C", rec: 0, bondedTo: [{ atom: "O", rec: 6, bondedTo: [{ atom: "H", rec: 7 }] }] }, { atom: "C", rec: 1 }, { atom: "C", rec: 2 }, { atom: "C", rec: 3 }, { atom: "C", rec: 4 }, { atom: "C", rec: 5 }], true),
   },
 };
 
@@ -259,7 +265,7 @@ export const reactions: IReactionInfo[] = [
     }
   },
   {
-    name: "Halogenation",
+    name: "Hydrohalogenation",
     type: "electrophilic addition",
     start: 2,
     end: 23,
@@ -269,7 +275,7 @@ export const reactions: IReactionInfo[] = [
       let X: Group;
       if (Object.values(reactant.groups).length === 1) {
         X = Object.values(reactant.groups)[0];
-        if (!X.isElement("F", "Cl", "Br", "I") || X.charge !== 0) return { ok: false, data: `Expected halogen X, got ${X.toStringFancy(false)}`};
+        if (!X.isElement("F", "Cl", "Br", "I") || X.charge !== 0) return { ok: false, data: `Expected halogen X, got ${X.toStringFancy(false)}` };
       } else {
         return { ok: false, data: `Expected halogen X, got ${reactant.generateSMILES()}` };
       }
@@ -453,6 +459,34 @@ export const reactions: IReactionInfo[] = [
       [O, group[2]].forEach(group => {
         let H = new Group();
         H.addElement("H");
+        H.isImplicit = !opts.addH;
+        mol.groups[H.ID] = H;
+        group.addBond('-', H);
+      });
+
+      return { ok: true };
+    }
+  },
+  {
+    name: "Dihydroxylation",
+    start: 2,
+    end: 3,
+    reagents: "OsO4 or Na2SO3/H2O",
+    conditions: "heat/pressure",
+    react: (mol, group, opts) => {
+      // Break C=C
+      let bond = mol.getBond(group[1].ID, group[2].ID);
+      bond.bond = "-";
+      // Add oxygen
+      let O1 = new Group(["O"]);
+      mol.groups[O1.ID] = O1;
+      group[1].addBond("-", O1);
+      let O2 = new Group(["O"]);
+      mol.groups[O2.ID] = O2;
+      group[2].addBond("-", O2);
+      // Add hydrogens
+      [O1, O2].forEach(group => {
+        let H = new Group(["H"]);
         H.isImplicit = !opts.addH;
         mol.groups[H.ID] = H;
         group.addBond('-', H);
@@ -892,7 +926,7 @@ export const reactions: IReactionInfo[] = [
       // Transfer group ownership
       for (let gid in reactant.groups) {
         mol.groups[gid] = reactant.groups[gid];
-      } 
+      }
 
       return { ok: true };
     }
@@ -1493,6 +1527,199 @@ export const reactions: IReactionInfo[] = [
         mol.groups[Hbond.dest].elements.clear();
         mol.groups[Hbond.dest].isImplicit = false;
         mol.groups[Hbond.dest].addElement(X.getElementString(false));
+      });
+
+      return { ok: true };
+    },
+    reactOnce: true,
+  },
+  {
+    name: "Reduction",
+    start: 33,
+    end: 3,
+    reagents: "LiAlH4",
+    react: (mol, group, opts) => {
+      // Sever O-H
+      mol.severBond(group[3].ID, group[4].ID);
+      // Sever O-O
+      mol.severBond(group[2].ID, group[3].ID);
+      // Remove O
+      delete mol.groups[group[3].ID];
+      // Create O-H
+      group[2].addBond("-", group[4]);
+      group[4].isImplicit = !opts.addH;
+
+      return { ok: true };
+    },
+    reactOnce: true,
+  },
+  {
+    name: "Reduction",
+    start: 25,
+    end: 33,
+    reagents: "O2",
+    react: (mol, group, opts) => {
+      // Must be C-H
+      let carbon = group[1], hydrogen: Group;
+      let hbond = mol.getAllBonds(carbon.ID).find(b => mol.groups[b.dest].isElement("H"));
+      if (hbond) {
+        hydrogen = mol.groups[hbond.dest];
+      } else {
+        carbon = group[3];
+        hbond = mol.getAllBonds(carbon.ID).find(b => mol.groups[b.dest].isElement("H"));
+        if (hbond) hydrogen = mol.groups[hbond.dest];
+        else return { ok: false, data: `Expected at last one Hydrogen bonded to O-C` };
+      }
+      // Sever C-H
+      mol.severBond(carbon.ID, hydrogen.ID);
+      // Add -O-O-H
+      let O1 = new Group(["O"]);
+      mol.groups[O1.ID] = O1;
+      carbon.addBond("-", O1);
+      let O2 = new Group(["O"]);
+      mol.groups[O2.ID] = O2;
+      O1.addBond("-", O2);
+      O2.addBond("-", hydrogen);
+      hydrogen.isImplicit = !opts.addH;
+
+      return { ok: true };
+    },
+    reactOnce: true,
+  },
+  {
+    name: "Reduction",
+    start: 25,
+    end: 34,
+    reagents: "O2",
+    react: (mol, group, opts) => {
+      // Sever O-C
+      mol.severBond(group[2].ID, group[3].ID);
+      // Create O
+      let O = new Group(["O"]);
+      mol.groups[O.ID] = O;
+      // Create O-O
+      group[2].addBond("-", O);
+      // Create O-C
+      O.addBond("-", group[3]);
+
+      return { ok: true };
+    },
+    reactOnce: true,
+  },
+  {
+    name: "Decomposition",
+    start: 34,
+    end: [3, 25],
+    reagents: "metal (Cu/Co/Mn) salt/RH",
+    provideReactant: { prompt: "Enter alkane: ", default: "C", smilesOpts: { addImplicitHydrogens: true } },
+    react: (mol, group, opts, reactant) => {
+      let cgroups = moleculeTypes[1].test(reactant), cgroup = cgroups[0];
+      if (cgroups.length === 0) return { ok: false, data: `Expected alkane, got ${reactant.generateSMILES(false)}` };
+
+      // Sever O-O
+      mol.severBond(group[2].ID, group[3].ID);
+      // Sever C-H
+      reactant.severBond(cgroup[1].ID, cgroup[2].ID);
+      // Bond O-H
+      group[2].addBond("-", cgroup[2]);
+      mol.groups[cgroup[2].ID] = cgroup[2];
+      delete reactant.groups[cgroup[2].ID];
+      // Seperate into ETHER and ALCOHOL
+      const discard = mol.removeUnbondedGroups(group[1].ID);
+      for (let id in discard) reactant.groups[id] = discard[id];
+      // Bond O-C
+      group[3].addBond("-", cgroup[1]);
+
+      return { ok: true, add: [reactant] };
+    },
+    reactOnce: true,
+  },
+  {
+    name: "Epoxidation",
+    start: 2,
+    end: 35,
+    reagents: "peroxyacid e.g. M-CPBA",
+    react: (mol, group, opts) => {
+      // C=C to C-C
+      mol.getBond(group[1].ID, group[2].ID).bond = "-";
+      // Bond -O
+      let O = new Group(["O"]);
+      mol.groups[O.ID] = O;
+      group[1].addBond("-", O);
+      O.addBond("-", group[2]);
+      // Create ring
+      let digit = mol.rings.length === 0 ? 1 : Math.max(...mol.rings.map(ring => ring.digit)) + 1;
+      const ring = new Ring(digit, group[1].ID);
+      ring.members = [group[1].ID, O.ID, group[2].ID];
+      ring.start = ring.members[0];
+      ring.end = ring.members[ring.members.length - 1];
+      mol.groups[ring.start].ringDigits.push(digit);
+      mol.groups[ring.end].ringDigits.push(digit);
+      mol.rings.push(ring);
+
+      return { ok: true };
+    },
+  },
+  {
+    name: "Cleaving",
+    start: 35,
+    end: 23,
+    reagents: "HX",
+    provideReactant: { prompt: "Enter halogen X: ", default: "Br", smilesOpts: { addImplicitHydrogens: false, checkBondCount: false } },
+    react: (mol, group, opts, reactant) => {
+      let X: Group;
+      if (Object.values(reactant.groups).length === 1) {
+        X = Object.values(reactant.groups)[0];
+        if (!X.isElement("F", "Cl", "Br", "I") || X.charge !== 0) return { ok: false, data: `Expected halogen X, got ${X.toStringFancy(false)}` };
+      } else {
+        return { ok: false, data: `Expected halogen X, got ${reactant.generateSMILES()}` };
+      }
+
+      // Disband Ring
+      const ringIndex = mol.rings.findIndex(ring => ring.ID === group._ringID), ring = mol.rings[ringIndex];
+      for (let id of ring.members) {
+        let i = mol.groups[id].ringDigits.indexOf(ring.digit);
+        if (i !== -1) mol.groups[id].ringDigits.splice(i, 1);
+      }
+      mol.severBond(ring.start, ring.end);
+      mol.rings.splice(ringIndex, 1);
+      // Create O-H
+      let H = new Group(["H"]);
+      H.isImplicit = !opts.addH;
+      mol.groups[H.ID] = H;
+      group[1].addBond("-", H);
+      // Add -X
+      mol.groups[X.ID] = X;
+      group[3].addBond("-", X);
+
+      return { ok: true };
+    },
+    reactOnce: true,
+  },
+  {
+    name: "Cleaving",
+    start: 35,
+    end: 3,
+    reagents: "H2SO4/H2O or NaOH",
+    react: (mol, group, opts) => {
+      // Disband Ring
+      const ringIndex = mol.rings.findIndex(ring => ring.ID === group._ringID), ring = mol.rings[ringIndex];
+      for (let id of ring.members) {
+        let i = mol.groups[id].ringDigits.indexOf(ring.digit);
+        if (i !== -1) mol.groups[id].ringDigits.splice(i, 1);
+      }
+      mol.severBond(ring.start, ring.end);
+      mol.rings.splice(ringIndex, 1);
+      // Create C-O
+      let O = new Group(["O"]);
+      mol.groups[O.ID] = O;
+      group[3].addBond("-", O);
+      // Create O-H bonds
+      [group[1], O].forEach(group => {
+        let H = new Group(["H"]);
+        H.isImplicit = !opts.addH;
+        mol.groups[H.ID] = H;
+        group.addBond("-", H);
       });
 
       return { ok: true };

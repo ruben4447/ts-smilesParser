@@ -23,6 +23,8 @@ export class Group {
   public readonly chainDepth: number;
   public isImplicit = false; // Mainly for Hydrogens
 
+  public constructor(data?: IGroupInformation);
+  public constructor(elements: string[]);
   public constructor(data?: IGroupInformation | string[]) {
     if (data === undefined) data = {};
     let els: string[] = [];

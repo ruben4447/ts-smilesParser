@@ -21,6 +21,7 @@ export interface IGroupMap {
 }
 
 export interface IGroupStrMap {
+  _ringID?: number;
   [id: string]: Group;
 }
 

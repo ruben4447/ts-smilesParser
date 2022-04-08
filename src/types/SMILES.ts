@@ -125,7 +125,7 @@ export const createRenderOptsObject = (): IRenderOptions => ({
     I: "#934DB0",
     Br: "#D35400"
   },
-  bondLength: 32,
+  bondLength: 45,
   smallBondLengthFrac: 0.85,
   bondWidth: 1,
   atomOverlapPadding: 4,
@@ -133,7 +133,7 @@ export const createRenderOptsObject = (): IRenderOptions => ({
   renderImplicit: true,
   collapseH: true,
   skeletal: false,
-  skeletalAngle: Math.PI/7,
+  skeletalAngle: Math.PI / 7,
   bondGap: 5,
   aromaticRingGap: 10,
   ringRestrictAngleSmall: false,

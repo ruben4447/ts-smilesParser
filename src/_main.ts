@@ -41,7 +41,7 @@ function _main() {
   // parseSmiles("C1=CC=C(C(=C1)CC(=O)O)NC2=C(C=CC=C2Cl)Cl");
   // parseSmiles("C=COC1=COC=C1");
   // parseSmiles("C=CC=C>[O2].[CuCl2]>O1C=CC=C1");
-  parseSmiles("COO");
+  parseSmiles("C=C=C");
   // parseSmiles("ClCl>>[Cl.].[Cl.]");
   // parseSmiles("CC1:C(:C:C(:C:C1[N+](=O)[O-])[N+](=O)[O-])[N+](=O)[O-]");
   // parseSmiles("Cc1c(cc(cc1[NO2])[NO2])[NO2]");
@@ -318,7 +318,7 @@ function parseSmiles(smiles?: string, flag: 0 | 1 | 2 = 1) {
   ctx.clearRect(0, 0, $globals.canvas.width, $globals.canvas.height);
   if (smiles !== undefined) inputSMILES.value = smiles;
   if (flag === 0) return;
-  
+
   let ps: ParsedSMILES, parseTime: number;
   if (flag === 1) {
     try {
